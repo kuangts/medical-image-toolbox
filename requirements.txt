@@ -1,0 +1,8 @@
+numpy
+SimpleITK
+matplotlib
+pydicom
+vtk
+PySide6
+
+

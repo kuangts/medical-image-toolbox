@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 import SimpleITK as sitk
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
-from data import DataManager, DataView
+from data.interface import DataManager, DataView
 
 
 class MainWindow(QMainWindow, DataView):

@@ -90,7 +90,7 @@ from enum import Enum, IntFlag, auto
 import numbers
 import asyncio
 
-from data import DataManager, DataView 
+from data.interface import DataManager, DataView 
 
 
 # class KeyFilter(QObject):

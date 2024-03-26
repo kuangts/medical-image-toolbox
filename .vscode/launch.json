@@ -10,6 +10,24 @@
             "request": "launch",
             "program": "mainwindow.py",
             "console": "internalConsole"
+        },
+        {
+            "name": "Module: image_util",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "image_util",
+            "args": [
+
+            ]
+        },
+        {
+            "name": "test.py",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "test.py",
+            "args": [
+
+            ]
         }
     ]
 }
