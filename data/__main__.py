@@ -6,11 +6,13 @@ a simple ui is launch to allow various commonly used functions (resampling, conv
 
 import os
 import sys
+import shutil
+import subprocess
 import SimpleITK as sitk
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .image import ImageFrame, SkullEngineMask, SkullEngineScan
+from .image import ImageFrame, SKNMask, SKNScan
 
 
 def show(image_slice:np.array, mask_slice:np.array):
@@ -28,43 +30,44 @@ def show(image_slice:np.array, mask_slice:np.array):
 
 
 
+def test():
 
-def test(argv):
-
-    i_slice = 200
-    frame = ImageFrame(size=(576,576,432), spacing=(0.4,0.4,0.4))
+    i_slice = 100
+    frame = ImageFrame(size=(512,512,144), spacing=(0.488281,0.488281,1.250000), origin=(0.,0.,0.))
     os.chdir('C:\\data\\test')
     
     # decompress bin files from cass
+    subprocess.run(['rar', 'x', '-idq', 'pre.CASS', 'Patient_data.bin', '0.bin', '1.bin'],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     # read from bin and write to nifti
 
-    img = SkullEngineScan.read_bin_aa('Patient_data.bin', frame=frame)
-    msk0 = SkullEngineMask.read_bin_aa('0.bin', frame=frame)
-    msk1 = SkullEngineMask.read_bin_aa('1.bin', frame=frame)
-    msk = SkullEngineMask.combine_bin_aa('0.bin','1.bin', frame=frame)
+    img = SKNScan.read_bin_aa('Patient_data.bin', frame=frame)
+    msk0 = SKNMask.read_bin_aa('0.bin', frame=frame)
+    msk1 = SKNMask.read_bin_aa('1.bin', frame=frame)
+    msk = SKNMask.combine_bin_aa('0.bin','1.bin', frame=frame)
 
 
     show(
-        sitk.GetArrayFromImage(img)[i_slice,:,:],
-        sitk.GetArrayFromImage(msk)[i_slice,:,:],
+        img.data[i_slice,:,:],
+        msk.data[i_slice,:,:],
     )
 
-    img.write_nifti('img_rewrite.nii.gz')
-    msk0.write_nifti('msk_rewrite0.nii.gz')
-    msk1.write_nifti('msk_rewrite1.nii.gz')
+    img.save('img_rewrite.nii.gz')
+    msk0.save('msk_rewrite0.nii.gz')
+    msk1.save('msk_rewrite1.nii.gz')
 
     # view in itksnap
 
     # read from nifti and write to bin
 
-    img_rewrite = SkullEngineScan.read_nifti('img_rewrite.nii.gz')
-    msk_rewrite0 = SkullEngineMask.read_nifti('msk_rewrite0.nii.gz')
-    msk_rewrite1 = SkullEngineMask.read_nifti('msk_rewrite1.nii.gz')
+    img_rewrite = SKNScan.read('img_rewrite.nii.gz')
+    msk_rewrite0 = SKNMask.read('msk_rewrite0.nii.gz')
+    msk_rewrite1 = SKNMask.read('msk_rewrite1.nii.gz')
     
     show(
-        sitk.GetArrayFromImage(img)[i_slice,:,:],
-        sitk.GetArrayFromImage(msk)[i_slice,:,:],
+        img.data[i_slice,:,:],
+        msk.data[i_slice,:,:],
     )
 
     img_rewrite.write_bin_aa('Patient_data_rewrite.bin')
@@ -75,17 +78,9 @@ def test(argv):
         np.all(np.fromfile('0.bin', dtype=np.int16)==np.fromfile('0_rewrite.bin', dtype=np.int16)) and \
         np.all(np.fromfile('1.bin', dtype=np.int16)==np.fromfile('1_rewrite.bin', dtype=np.int16))
 
-    # put bin files in cass file and view
-
-
-def main(argv):
-    pass
-
 
 
 
 if __name__ == '__main__':
     test()    
 
-# if __name__ == '__main__':
-#     main(sys.argv[1:])

@@ -1,10 +1,45 @@
 import os
 import SimpleITK as sitk
 import numpy as np
+from vtkmodules.vtkCommonDataModel import vtkImageData
+from vtkmodules.util.numpy_support import numpy_to_vtk
 
 
 ALLOW_PHI = True
 CAN_ERASE_PHI_AT_INIT = True
+
+
+def read_dicom(filepath, *, rescale=False, **kw):
+    # get series id from the file
+    file_reader = sitk.ImageFileReader()
+    file_reader.SetFileName(filepath)
+    file_reader.SetImageIO("GDCMImageIO")
+    file_reader.LoadPrivateTagsOn()
+    file_reader.ReadImageInformation()
+    series_instance_uid = ''
+    if file_reader.HasMetaDataKey('0020|000e'):
+        series_instance_uid = file_reader.GetMetaData('0020|000e')
+
+    # find all the files in the same series and same directory
+    dicom_names = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(os.path.dirname(filepath), series_instance_uid)
+
+    # read the series
+    reader = sitk.ImageSeriesReader()
+    reader.SetImageIO("GDCMImageIO")
+    reader.SetFileNames(dicom_names)
+    reader.SetOutputPixelType()
+    reader.LoadPrivateTagsOn()
+    img = reader.Execute()
+
+    if rescale:
+        if img.HasMetaDataKey('0028|1052') and img.HasMetaDataKey('0028|1053'):
+            b,m = float(img.GetMetaData('0028|1052')), float(img.GetMetaData('0028|1053')) # Rescale Intercept, Rescale Slope
+        else:
+            b,m = -1024., 1.
+        
+        img = (img-m) / m
+
+    return img
 
 
 class ImageFrame:
@@ -15,7 +50,7 @@ class ImageFrame:
         for legacy reasons, arrays decoded from AnatomicAligner bin file are ordered (-z, -y, +x), so a reversal is needed immediately on axial and coronal axes.
     '''
 
-    def __init__(self, *, size, spacing=(1.,1.,1.), origin=(0.,0.,0.)) -> None:
+    def __init__(self, *, size:tuple, spacing:tuple, origin:tuple) -> None:
         self.size = size
         self.spacing = spacing
         self.origin = origin
@@ -23,153 +58,124 @@ class ImageFrame:
 
 
 
-class Image(sitk.Image):
+class Image:
 
-    def __init__(self, *args, 
-                 identifier,        # this param helps program find image assets in memory and should not include phi
+    def __init__(self, *, data, frame, has_phi, identifier='', metadata={}, **kw):
+
+        self.data = data
+        self.frame = frame
+        self.has_phi = has_phi
+        self.identifier = identifier
+        self.metadata = metadata
+        for k,v in kw.items():
+            setattr(self, k, v)
+        return None
+
+
+    @classmethod
+    def read(cls,
+                 filepath,
                  has_phi=True,      # whether the sitk image has PHI metadata attached
                  **kw,
                  ):
         
-        super().__init__(*args)
-        self.identifier = identifier
-        self.has_phi = has_phi
+
+        if 'imageIO' not in kw or kw['imageIO'] == "GDCMImageIO":
+            try:
+                img = read_dicom(filepath, **kw)
+            except:
+                pass
+
+        img = sitk.ReadImage(filepath, 
+                              kw['outputPixelType'] if 'outputPixelType' in kw else sitk.sitkUnknown, 
+                              kw['imageIO'] if 'imageIO' in kw else ''
+                              )
+            
+        data = sitk.GetArrayFromImage(img)
+        frame = ImageFrame(
+                        size=img.GetSize(),
+                        spacing=img.GetSpacing(),
+                        origin=img.GetOrigin(),
+                        )
 
         # more processing before image is ready to use
+        metadata = {}
 
-        if not self.has_phi:
-            pass
-            # self.erase_phi()
+        if ALLOW_PHI:
+            for key in img.GetMetaDataKeys():
+                metadata[key] = img.GetMetaData(key)
 
-        else:
-            if not ALLOW_PHI:
-                if CAN_ERASE_PHI_AT_INIT:
-                    self.erase_phi()
+        elif has_phi:
 
-                else:
-                    raise ValueError(
-                        "This program allows only non-PHI data"
-                    )
+            if CAN_ERASE_PHI_AT_INIT:
+                metadata = {}
+                has_phi = False
+
+            else:
+                raise ValueError(
+                    "This program allows only non-PHI data"
+                )
         
+        return cls(data=data, frame=frame, has_phi=has_phi, identifier=filepath, metadata=metadata)
+    
+
+    def save(self, filepath):
+        sitk.WriteImage(self.itk(), filepath, imageIO='NiftiImageIO')
         return None
+    
 
 
-    def erase_phi(self):
-        for key in self.GetMetaDataKeys():
-            self.EraseMetaData(key)
-        self.has_phi = False
+    def itk(self, *, with_metadata=False):
+        img = sitk.GetImageFromArray(self.data)
+        img.SetOrigin(self.frame.origin)
+        img.SetSpacing(self.frame.spacing)
+        if with_metadata:
+            for k,v in self.metadata.items():
+                img.SetMetaData(k,self.metadata(v))
+
+        return img
+    
+
+    def vtk(self):
+        arr = numpy_to_vtk(self.data.flatten(), deep=True)
+        vtk_img = vtkImageData()
+        vtk_img.GetPointData().SetScalars(arr)
+        vtk_img.SetOrigin(self.frame.origin)
+        vtk_img.SetDimensions(self.data.shape[::-1])
+        vtk_img.SetSpacing(self.frame.spacing)
+        # vtk_img.SetDirectionMatrix(sitk_img.GetDirection())
+        return vtk_img
 
 
-    def phi(self):
-        phi_dict = {}
-        for key in self.GetMetaDataKeys():
-            phi_dict[key] = self.GetMetaData(key)
-        return phi_dict
 
-
-    def read_dicom(cls, filepath, *, rescale=False, **kw):
-        # get series id from the file
-        file_reader = sitk.ImageFileReader()
-        file_reader.SetFileName(filepath)
-        file_reader.SetImageIO("GDCMImageIO")
-        file_reader.LoadPrivateTagsOn()
-        file_reader.ReadImageInformation()
-        series_instance_uid = ''
-        if file_reader.HasMetaDataKey('0020|000e'):
-            series_instance_uid = file_reader.GetMetaData('0020|000e')
-
-        # find all the files in the same series and same directory
-        dicom_names = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(os.path.dirname(filepath), series_instance_uid)
-
-        # read the series
-        reader = sitk.ImageSeriesReader()
-        reader.SetImageIO("GDCMImageIO")
-        reader.SetFileNames(dicom_names)
-        reader.SetOutputPixelType()
-        reader.LoadPrivateTagsOn()
-        img = reader.Execute()
-
-        if rescale:
-            if img.HasMetaDataKey('0028|1052') and img.HasMetaDataKey('0028|1053'):
-                b,m = float(img.GetMetaData('0028|1052')), float(img.GetMetaData('0028|1053')) # Rescale Intercept, Rescale Slope
-            else:
-                b,m = -1024., 1.
-            
-            img = (img-m) / m
-
-        return cls(img, **kw)
-
-
-    @classmethod
-    def read(cls, filepath, **kw):
-
-        if 'imageIO' in kw:
-            if kw['imageIO'] == "GDCMImageIO":
-                return cls.read_dicom(filepath, **kw)
-            else:
-                file_reader = sitk.ImageFileReader()
-                file_reader.SetFileName(filepath)
-                file_reader.SetImageIO(kw['imageIO'])
-                file_reader.LoadPrivateTagsOn()
-                file_reader.ReadImageInformation()
-                img = file_reader.Execute()
-        else:
-            # try to read file as dicom
-            try:
-                return cls.read_dicom(filepath, **kw)
-
-            except:
-                pixel_id = kw['outputPixelType'] if 'outputPixelType' in kw else sitk.sitkUnknown
-                image_io = kw['imageIO'] if 'imageIO' in kw else ''
-                img = sitk.ReadImage(filepath, pixel_id, image_io)
-                return cls(img, **kw)
-
-
-class SkullEngineScan(Image):
+class SKNScan(Image):
     '''this class reads and writes medical scans in common formats'''
 
     @classmethod
-    def read_bin_aa(cls, filepath, *, frame:ImageFrame, return_numpy=False, **kw):
+    def read_bin_aa(cls, filepath, frame:ImageFrame):
         '''reads medical scans saved in AnatomicAligner bin file'''
         bytes = np.fromfile(filepath, dtype=np.int16)
         arr = bytes.reshape(frame.size[::-1])[::-1,::-1,:]
-        if return_numpy:
-            return arr
-        img = sitk.GetImageFromArray(arr)
-        img.SetSpacing(frame.spacing)
-        img.SetOrigin(frame.origin)
-        if 'has_phi' not in kw:
-            kw['has_phi'] = False
-        return cls(img, **kw)
+        return cls(data=arr, frame=frame, has_phi=False, identifier=filepath)
     
 
     def write_bin_aa(self, filepath):
         '''writes medical scans to AnatomicAligner bin file'''
-        arr = sitk.GetArrayFromImage(self)
-        bytes = np.ravel(arr[::-1,::-1,:].astype(np.int16), order='C') # possible loss of precision since AA always uses int16
+        bytes = np.ravel(self.data[::-1,::-1,:].astype(np.int16), order='C') # possible loss of precision since AA always uses int16
         return bytes.tofile(filepath)
 
 
     @classmethod
-    def read(cls, filepath, *, return_numpy=False, **kw):
-        img = super().read(filepath, rescale=True, **kw) # rescale is for dicom
-        if return_numpy:
-            return sitk.GetArrayFromImage(img)
-        else:
-            return img
+    def read(cls, filepath, **kw) :
+        return super().read(filepath, rescale=True, **kw) # rescale is for dicom
 
 
-    def save(self, filepath):
-        sitk.WriteImage(self, filepath, imageIO='NiftiImageIO')
-        return None
-    
 
-
-class SkullEngineMask(Image):
+class SKNMask(Image):
     '''this class encaps IO methods of segmentation masks of medical scans'''
 
     @classmethod
-    def read_bin_aa(cls, filepath, *, frame:ImageFrame, return_numpy=False):
+    def read_bin_aa(cls, filepath, frame:ImageFrame):
         # origin and spacing are optional for initializer but should be set later
         bytes = np.fromfile(filepath, dtype=np.int16)
         arr = np.zeros(frame.size[::-1])
@@ -180,17 +186,11 @@ class SkullEngineMask(Image):
                 bytes[i+1]:bytes[i+1]+bytes[i+2]
                 ] = 1
         arr = arr[::-1,::-1,:]
-        if return_numpy:
-            return arr
-        img = sitk.GetImageFromArray(arr)
-        img.SetSpacing(frame.spacing)
-        img.SetOrigin(frame.origin)
-        img.has_phi = False
-        return cls(img)
+        return cls(data=arr, frame=frame, has_phi=False, identifier=filepath)
         
 
     def write_bin_aa(self, filepath, split_if_multiple_found=True):
-        arr = sitk.GetArrayFromImage(self)[::-1,::-1,:]
+        arr = self.data[::-1,::-1,:]
         vals = np.unique(arr)
         vals = vals[vals!=0]
         multiple_found = len(vals) > 1
@@ -217,36 +217,18 @@ class SkullEngineMask(Image):
     
 
     @classmethod
-    def combine_bin_aa(cls, *filepath, frame:ImageFrame, return_numpy=False, **kw):
+    def combine_bin_aa(cls, *filepath, frame:ImageFrame):
         # masks must be mutually disjoint
         arr = np.zeros(frame.size[::-1])
         for i, f in enumerate(filepath):
-            m = cls.read_bin_aa(f, frame=frame, return_numpy=True)
-            arr[m>0] = i
-
-        if return_numpy:
-            return arr
+            m = cls.read_bin_aa(f, frame=frame)
+            arr[m.data>0] = i
         
-        img = sitk.GetImageFromArray(arr)
-        img.SetSpacing(frame.spacing)
-        img.SetOrigin(frame.origin)
-        if 'has_phi' not in kw:
-            kw['has_phi'] = False
-        return cls(img, **kw)
+        return cls(data=arr, frame=frame, has_phi=False, identifier=';'.join(filepath))
 
 
     @classmethod
-    def read(cls, filepath, *, return_numpy=False, **kw):
-        img = super().read(filepath, rescale=False, **kw) # rescale is for dicom
-        img = (img==100)
-        if return_numpy:
-            return sitk.GetArrayFromImage(img)
-        else:
-            return img
-
-
-    def save(self, filepath):
-        sitk.WriteImage(self, filepath, imageIO='NiftiImageIO')
-        return None
+    def read(cls, filepath, **kw):
+        return super().read(filepath, rescale=False, **kw) # rescale is for dicom
 
 

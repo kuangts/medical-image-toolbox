@@ -10,8 +10,6 @@ from PySide6.QtWidgets import QApplication, QMainWindow
 # You need to run the following command to generate the ui_form.py file
 #     pyside6-uic form.ui -o ui_form.py, or
 #     pyside2-uic form.ui -o ui_form.py
-from mainwindow_ui import Ui_MainWindow
-from fourpane import FourPaneWindow
 from vtkmodules.vtkCommonDataModel import vtkImageData
 from vtkmodules.vtkIOImage import vtkNIFTIImageReader
 from PySide6.QtCore import Qt, Signal, Slot, QEvent, QObject
@@ -27,7 +25,9 @@ from PySide6.QtWidgets import (
 import SimpleITK as sitk
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
-from data.interface import DataManager, DataView
+from .mainwindow_ui import Ui_MainWindow
+from .fourpane import FourPaneWindow
+from ..data.interface import DataManager, DataView
 
 
 class MainWindow(QMainWindow, DataView):
@@ -59,12 +59,10 @@ class MainWindow(QMainWindow, DataView):
     def on_actionOpenImage_triggered(self, checked):
         print('Open Image')
 
-        ## pick file
+        file, _ = QFileDialog.getOpenFileName()
+        print(file)
         
-        dm = self.get_data_manager()
-        if not dm:
-            return None
-        dm.load_scan(image_path)
+        self.get_data_manager().load_scan(file, has_phi=False)
         self.data_changed()
 
         return None

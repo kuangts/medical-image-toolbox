@@ -8,8 +8,9 @@
             "name": "launch",
             "type": "debugpy",
             "request": "launch",
-            "program": "mainwindow.py",
-            "console": "internalConsole"
+            "module": "medical-image-toolbox",
+            "console": "internalConsole",
+            "cwd": "${workspaceFolder}\\.."
         },
         {
             "name": "Module: image_util",
@@ -21,10 +22,11 @@
             ]
         },
         {
-            "name": "test.py",
+            "name": "Test Module: data",
             "type": "debugpy",
             "request": "launch",
-            "python": "test.py",
+            "module": "data",
+            "console": "internalConsole",
             "args": [
 
             ]

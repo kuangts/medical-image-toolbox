@@ -90,7 +90,8 @@ from enum import Enum, IntFlag, auto
 import numbers
 import asyncio
 
-from data.interface import DataManager, DataView 
+from ..data.interface import DataManager, DataView 
+from ..data.image import SKNScan, SKNMask
 
 
 # class KeyFilter(QObject):
@@ -216,7 +217,7 @@ class FourPaneWindow(QWidget, DataView):
         # self.iren_sagittal.viewer.GetResliceCursorWidget().AddObserver(vtkResliceCursorWidget.ResliceAxesChangedEvent, self.axis_changed)
 
 
-        self.update_image(vtkImageData()) # this is to silent error from vtk before image is loaded
+        self.data_changed() # this is to silent error from vtk before image is loaded
 
         # put 4 subviews on a 2x2 grid
         self.gridlayout = QGridLayout(parent=self)
@@ -236,18 +237,26 @@ class FourPaneWindow(QWidget, DataView):
         return None
     
 
-    @property
-    def image(self):
+
+    def get_image(self) -> vtkImageData:
+        # blend image with masks
         dm = self.get_data_manager()
-        if dm is None or not dm.image_is_loaded():
+        if dm is None or not dm.scan_is_loaded():
             return None
-        return dm.get_image()
+        return dm.get_scan().vtk()
 
 
 
     def data_changed(self, *args, **kw) -> None:
-        if self.image:
-            self.reslice_signal.emit(*self.image.GetCenter())
+
+        vtk_img = self.get_image()
+        if vtk_img:
+            
+            self.iren_sagittal.viewer.SetInputData(vtk_img)
+            self.iren_axial.viewer.SetInputData(vtk_img)
+            self.iren_coronal.viewer.SetInputData(vtk_img)
+
+            self.reslice_signal.emit(*vtk_img.GetCenter())
         
         return None
     
@@ -255,7 +264,8 @@ class FourPaneWindow(QWidget, DataView):
 
     def left_button_press_event_image(self, obj:vtkInteractorStyleImage, event):
 
-        if not self.image:
+        if not self.get_data_manager().scan_is_loaded():
+            print('scan not loaded')
             return None
         
         pos = obj.GetInteractor().GetEventPosition()
@@ -268,19 +278,20 @@ class FourPaneWindow(QWidget, DataView):
     @Slot(float, float, float)
     def reslice(self, x, y, z):
 
-        if not self.image:
-            return None
+        vtk_img = self.iren_sagittal.viewer.GetInput()
+        if vtk_img:
 
-        # three views must be resliced at the same time
-        new_slice = [float('nan')]*3
-        self.image.TransformPhysicalPointToContinuousIndex([x,y,z], new_slice)
-        i,j,k = new_slice
-        if i>=self.centralWidget().iren_sagittal.viewer.GetSliceMin() and i<=self.centralWidget().iren_sagittal.viewer.GetSliceMax():
-            self.centralWidget().iren_sagittal.viewer.SetSlice(int(round(i)))
-        if j>=self.centralWidget().iren_coronal.viewer.GetSliceMin() and j<=self.centralWidget().iren_coronal.viewer.GetSliceMax():
-            self.centralWidget().iren_coronal.viewer.SetSlice(int(round(j)))
-        if k>=self.centralWidget().iren_axial.viewer.GetSliceMin() and k<=self.centralWidget().iren_axial.viewer.GetSliceMax():
-            self.centralWidget().iren_axial.viewer.SetSlice(int(round(k)))
+            # three views must be resliced at the same time
+            new_slice = [float('nan')]*3
+            vtk_img.TransformPhysicalPointToContinuousIndex([x,y,z], new_slice)
+            i,j,k = new_slice
+
+            if i>=self.iren_sagittal.viewer.GetSliceMin() and i<=self.iren_sagittal.viewer.GetSliceMax():
+                self.iren_sagittal.viewer.SetSlice(int(round(i)))
+            if j>=self.iren_coronal.viewer.GetSliceMin() and j<=self.iren_coronal.viewer.GetSliceMax():
+                self.iren_coronal.viewer.SetSlice(int(round(j)))
+            if k>=self.iren_axial.viewer.GetSliceMin() and k<=self.iren_axial.viewer.GetSliceMax():
+                self.iren_axial.viewer.SetSlice(int(round(k)))
 
         return None
 
