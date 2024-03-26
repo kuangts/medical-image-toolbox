@@ -30,7 +30,7 @@ from .fourpane import FourPaneWindow
 from ..data.interface import DataManager, DataView
 
 
-class MainWindow(QMainWindow, DataView):
+class AppWindow(QMainWindow, DataView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -151,8 +151,6 @@ class MainWindow(QMainWindow, DataView):
 
 
 
-
-
     # # def closeEvent(self, QCloseEvent):
     # #     super().closeEvent(QCloseEvent)
     # #     self.central.close()
@@ -175,11 +173,3 @@ class MainWindow(QMainWindow, DataView):
 
     #     return None
 
-
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    win = MainWindow()
-    win.show()
-    sys.exit(app.exec())
