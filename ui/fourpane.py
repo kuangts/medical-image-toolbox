@@ -91,7 +91,7 @@ import numbers
 import asyncio
 
 from ..data.interface import DataManager, DataView 
-from ..data.image import SKNScan, SKNMask
+from ..data.image import SkullEngineScan, SkullEngineMask
 
 
 # class KeyFilter(QObject):

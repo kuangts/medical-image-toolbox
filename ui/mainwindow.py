@@ -28,6 +28,7 @@ from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 from .mainwindow_ui import Ui_MainWindow
 from .fourpane import FourPaneWindow
 from ..data.interface import DataManager, DataView
+from ..data.image import SkullEngineMask, SkullEngineScan
 
 
 class AppWindow(QMainWindow, DataView):
@@ -57,30 +58,60 @@ class AppWindow(QMainWindow, DataView):
 
     @Slot(bool)
     def on_actionOpenImage_triggered(self, checked):
-        print('Open Image')
 
-        file, _ = QFileDialog.getOpenFileName()
-        print(file)
+        dm = self.get_data_manager()
+        if dm.scan_is_loaded():
+            raise ValueError('image is already loaded and cannot be changed')
         
-        self.get_data_manager().load_scan(file, has_phi=False)
-        self.data_changed()
+        file, _ = QFileDialog.getOpenFileName()
+        print(f'Open Image: {file}')
+        img = SkullEngineScan.read(file, has_phi=False)
+        dm.set_scan(img)
+        self.data_changed()        
 
         return None
 
 
     @Slot(bool)
     def on_actionOpenMask_triggered(self, checked):
-        print('Open Mask')
+
+        dm = self.get_data_manager()
+        if dm.scan_is_loaded():
+            raise ValueError('image is already loaded and cannot be changed')
+        
+        file, _ = QFileDialog.getOpenFileName()
+        print(f'Open Image: {file}')
+        img = SkullEngineMask.read(file, has_phi=False)
+        dm.add_mask(img)
+        self.data_changed()        
+
 
 
     @Slot(bool)
     def on_actionSaveImage_triggered(self, checked):
-        print('Save Image')
+
+        dm = self.get_data_manager()
+        if not dm.scan_is_loaded():
+            raise ValueError('no image to save')
+        
+        file, _ = QFileDialog.getSaveFileName()
+        print(f'Save Image: {file}')
+        img = dm.get_scan()
+        img.save(file)
 
 
     @Slot(bool)
     def on_actionSaveMask_triggered(self, checked):
-        print('Save Mask')
+
+        dm = self.get_data_manager()
+        if not dm.scan_is_loaded():
+            raise ValueError('no image to save')
+        
+        file, _ = QFileDialog.getSaveFileName()
+        print(f'Save Mask: {file}')
+        img = dm.get_scan()
+        img.save(file)
+
 
 
     @Slot(bool)

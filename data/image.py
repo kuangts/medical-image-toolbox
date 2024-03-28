@@ -126,7 +126,10 @@ class Image:
 
 
     def itk(self, *, with_metadata=False):
-        img = sitk.GetImageFromArray(self.data)
+        arr = self.data
+        if arr.dtype == bool:
+            arr = arr.astype(np.int8)
+        img = sitk.GetImageFromArray(arr)
         img.SetOrigin(self.frame.origin)
         img.SetSpacing(self.frame.spacing)
         if with_metadata:
@@ -137,7 +140,10 @@ class Image:
     
 
     def vtk(self):
-        arr = numpy_to_vtk(self.data.flatten(), deep=True)
+        arr = self.data
+        if arr.dtype == bool:
+            arr = arr.astype(np.int8)
+        arr = numpy_to_vtk(arr.flatten(), deep=True)
         vtk_img = vtkImageData()
         vtk_img.GetPointData().SetScalars(arr)
         vtk_img.SetOrigin(self.frame.origin)
@@ -148,8 +154,9 @@ class Image:
 
 
 
-class SKNScan(Image):
+class SkullEngineScan(Image):
     '''this class reads and writes medical scans in common formats'''
+
 
     @classmethod
     def read_bin_aa(cls, filepath, frame:ImageFrame):
@@ -166,25 +173,37 @@ class SKNScan(Image):
 
 
     @classmethod
-    def read(cls, filepath, **kw) :
+    def read(cls, filepath, **kw):
         return super().read(filepath, rescale=True, **kw) # rescale is for dicom
 
 
+class SkullEngineMask(Image):
+    pass
 
-class SKNMask(Image):
+
+class SkullEngineSingleRoiMask(Image):
     '''this class encaps IO methods of segmentation masks of medical scans'''
+
+
+    def __init__(self, *, data, frame, has_phi, identifier='', metadata={}, **kw):
+        if data.dtype != bool:
+            print(f'creating single ROI mask from {data.dtype} data; might result in loss of ROIs')
+            data = data>0
+        super().__init__(data=data, frame=frame, has_phi=has_phi, identifier=identifier, metadata=metadata, **kw)
+
+
 
     @classmethod
     def read_bin_aa(cls, filepath, frame:ImageFrame):
         # origin and spacing are optional for initializer but should be set later
         bytes = np.fromfile(filepath, dtype=np.int16)
-        arr = np.zeros(frame.size[::-1])
+        arr = np.zeros(frame.size[::-1], dtype=bool)
         for i in range(0,bytes.size,4):
             arr[
                 bytes[i+3],
                 bytes[i],
                 bytes[i+1]:bytes[i+1]+bytes[i+2]
-                ] = 1
+                ] = True
         arr = arr[::-1,::-1,:]
         return cls(data=arr, frame=frame, has_phi=False, identifier=filepath)
         
@@ -215,20 +234,28 @@ class SKNMask(Image):
             
         return None
     
+    
+    @classmethod
+    def read(cls, filepath, **kw):
+        return super().read(filepath, rescale=False, **kw) # rescale is for dicom
+
+
+class SkullEngineMultipleRoiMask(Image):
+    '''this class encaps IO methods of segmentation masks of medical scans with multiple ROIs'''
+
+
+    
 
     @classmethod
-    def combine_bin_aa(cls, *filepath, frame:ImageFrame):
+    def combine(cls, *args:list[Image]):
         # masks must be mutually disjoint
+        arr = args[0].data.copy()
+        frame = 
         arr = np.zeros(frame.size[::-1])
         for i, f in enumerate(filepath):
             m = cls.read_bin_aa(f, frame=frame)
             arr[m.data>0] = i
         
-        return cls(data=arr, frame=frame, has_phi=False, identifier=';'.join(filepath))
-
-
-    @classmethod
-    def read(cls, filepath, **kw):
-        return super().read(filepath, rescale=False, **kw) # rescale is for dicom
+        return SkullEngineMultipleROIMask(data=arr, frame=frame, has_phi=False, identifier=';'.join(filepath))
 
 

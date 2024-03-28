@@ -12,7 +12,7 @@ import SimpleITK as sitk
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .image import ImageFrame, SKNMask, SKNScan
+from .image import ImageFrame, SkullEngineMask, SkullEngineScan
 
 
 def show(image_slice:np.array, mask_slice:np.array):
@@ -42,10 +42,10 @@ def test():
 
     # read from bin and write to nifti
 
-    img = SKNScan.read_bin_aa('Patient_data.bin', frame=frame)
-    msk0 = SKNMask.read_bin_aa('0.bin', frame=frame)
-    msk1 = SKNMask.read_bin_aa('1.bin', frame=frame)
-    msk = SKNMask.combine_bin_aa('0.bin','1.bin', frame=frame)
+    img = SkullEngineScan.read_bin_aa('Patient_data.bin', frame=frame)
+    msk0 = SkullEngineMask.read_bin_aa('0.bin', frame=frame)
+    msk1 = SkullEngineMask.read_bin_aa('1.bin', frame=frame)
+    msk = SkullEngineMask.combine_bin_aa('0.bin','1.bin', frame=frame)
 
 
     show(
@@ -61,9 +61,9 @@ def test():
 
     # read from nifti and write to bin
 
-    img_rewrite = SKNScan.read('img_rewrite.nii.gz')
-    msk_rewrite0 = SKNMask.read('msk_rewrite0.nii.gz')
-    msk_rewrite1 = SKNMask.read('msk_rewrite1.nii.gz')
+    img_rewrite = SkullEngineScan.read('img_rewrite.nii.gz')
+    msk_rewrite0 = SkullEngineMask.read('msk_rewrite0.nii.gz')
+    msk_rewrite1 = SkullEngineMask.read('msk_rewrite1.nii.gz')
     
     show(
         img.data[i_slice,:,:],

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from .image import SKNScan, SKNMask
+from .image import SkullEngineScan, SkullEngineMask
 
 
 class DataManager:
@@ -8,18 +8,7 @@ class DataManager:
         return None
     
 
-    def load_scan(self, filepath, *, has_phi):
-
-        if self.scan_is_loaded():
-            raise ValueError('image is already loaded and cannot be changed')
-        
-        img = SKNScan.read(filepath, has_phi=has_phi)
-        self.set_scan(img)
-
-        return None
-
-
-    def set_scan(self, _img:SKNScan) -> None:
+    def set_scan(self, _img:SkullEngineScan) -> None:
 
         '''loading the scan triggers a few actions, such as setting up the masks, etc.'''
 
@@ -31,7 +20,7 @@ class DataManager:
         return None
 
 
-    def add_mask(self, _m:SKNMask) -> None:
+    def add_mask(self, _m:SkullEngineMask) -> None:
         if not hasattr(self, 'mask_list'):
             self.mask_list = []
         self.mask_list.append(_m)
@@ -51,7 +40,7 @@ class DataManager:
         return len(self.mask_list)
 
 
-    def get_scan(self) -> SKNScan:
+    def get_scan(self) -> SkullEngineScan:
 
         if self.scan_is_loaded():
             return self.scan
@@ -59,7 +48,7 @@ class DataManager:
             return None
 
 
-    def get_mask(self, i:int) -> SKNMask:
+    def get_mask(self, i:int) -> SkullEngineMask:
 
         if i >= 0 and i < self.get_number_of_masks():
             return self.mask_list[i]
