@@ -19,7 +19,7 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
 from PySide6.QtWidgets import (QApplication, QMainWindow, QMenu, QMenuBar,
     QSizePolicy, QStatusBar, QWidget)
 
-from .fourpane import FourPaneWindow
+from fourpane import FourPaneWindow
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -40,6 +40,10 @@ class Ui_MainWindow(object):
         self.actionResampleParameters.setObjectName(u"actionResampleParameters")
         self.actionResampleApply = QAction(MainWindow)
         self.actionResampleApply.setObjectName(u"actionResampleApply")
+        self.actionConfigure = QAction(MainWindow)
+        self.actionConfigure.setObjectName(u"actionConfigure")
+        self.actionStart = QAction(MainWindow)
+        self.actionStart.setObjectName(u"actionStart")
         self.fourpane = FourPaneWindow(MainWindow)
         self.fourpane.setObjectName(u"fourpane")
         MainWindow.setCentralWidget(self.fourpane)
@@ -51,6 +55,8 @@ class Ui_MainWindow(object):
         self.menuFile.setObjectName(u"menuFile")
         self.menuResample = QMenu(self.menubar)
         self.menuResample.setObjectName(u"menuResample")
+        self.menuSegmentation = QMenu(self.menubar)
+        self.menuSegmentation.setObjectName(u"menuSegmentation")
         MainWindow.setMenuBar(self.menubar)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
@@ -58,6 +64,7 @@ class Ui_MainWindow(object):
 
         self.menubar.addAction(self.menuFile.menuAction())
         self.menubar.addAction(self.menuResample.menuAction())
+        self.menubar.addAction(self.menuSegmentation.menuAction())
         self.menuFile.addAction(self.actionOpenImage)
         self.menuFile.addAction(self.actionOpenMask)
         self.menuFile.addSeparator()
@@ -68,6 +75,9 @@ class Ui_MainWindow(object):
         self.menuResample.addAction(self.actionResampleParameters)
         self.menuResample.addSeparator()
         self.menuResample.addAction(self.actionResampleApply)
+        self.menuSegmentation.addAction(self.actionConfigure)
+        self.menuSegmentation.addSeparator()
+        self.menuSegmentation.addAction(self.actionStart)
 
         self.retranslateUi(MainWindow)
 
@@ -98,7 +108,10 @@ class Ui_MainWindow(object):
 #if QT_CONFIG(shortcut)
         self.actionResampleApply.setShortcut(QCoreApplication.translate("MainWindow", u"Ctrl+R", None))
 #endif // QT_CONFIG(shortcut)
+        self.actionConfigure.setText(QCoreApplication.translate("MainWindow", u"Configure", None))
+        self.actionStart.setText(QCoreApplication.translate("MainWindow", u"Start", None))
         self.menuFile.setTitle(QCoreApplication.translate("MainWindow", u"File", None))
         self.menuResample.setTitle(QCoreApplication.translate("MainWindow", u"Resample", None))
+        self.menuSegmentation.setTitle(QCoreApplication.translate("MainWindow", u"Segmentation", None))
     # retranslateUi
 
