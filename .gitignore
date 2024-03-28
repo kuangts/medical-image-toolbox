@@ -1,2 +1,3 @@
 .venv*
 testpath.json
+__pycache__/
