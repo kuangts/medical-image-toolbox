@@ -250,7 +250,7 @@ class SkullEngineMultipleRoiMask(Image):
     def combine(cls, *args:list[Image]):
         # masks must be mutually disjoint
         arr = args[0].data.copy()
-        frame = 
+        # frame = 
         arr = np.zeros(frame.size[::-1])
         for i, f in enumerate(filepath):
             m = cls.read_bin_aa(f, frame=frame)
