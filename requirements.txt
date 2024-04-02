@@ -4,5 +4,7 @@ matplotlib
 pydicom
 vtk
 PySide6
+scipy
+
 
 

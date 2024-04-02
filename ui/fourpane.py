@@ -172,7 +172,6 @@ class FourPaneWindow(QWidget, DataView):
 
         super().__init__(*initargs)
 
-        self.setAcceptDrops(True)
         self.reslice_signal.connect(self.reslice)
 
 
@@ -256,7 +255,7 @@ class FourPaneWindow(QWidget, DataView):
             self.iren_sagittal.viewer.SetInputData(vtk_img)
             self.iren_axial.viewer.SetInputData(vtk_img)
             self.iren_coronal.viewer.SetInputData(vtk_img)
-
+            
             self.reslice_signal.emit(*vtk_img.GetCenter())
         
         return None
@@ -296,25 +295,3 @@ class FourPaneWindow(QWidget, DataView):
 
         return None
 
-
-    # Drag and Drop
-    # https://doc.qt.io/qtforpython-6/overviews/dnd.html
-
-    def dragEnterEvent(self, event):
-
-        if event.mimeData().hasUrls():
-            for qurl in event.mimeData().urls():
-                p = qurl.path()
-                print(p)
-
-        event.acceptProposedAction()
-
-
-    def dropEvent(self, event):
-
-        if event.mimeData().hasUrls():
-            for qurl in event.mimeData().urls():
-                p = qurl.path()
-                print(p)
-
-        event.acceptProposedAction()

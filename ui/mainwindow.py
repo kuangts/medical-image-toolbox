@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 
 
+from PySide6.QtGui import QDragEnterEvent
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 # Important:
@@ -31,6 +32,9 @@ from ..data.interface import DataManager, DataView
 from ..data.image import SkullEngineMask, SkullEngineScan
 
 
+DEFAULT_RESAMPLING_REGULATION = (1,1,3)
+
+
 class AppWindow(QMainWindow, DataView):
 
     def __init__(self, parent=None):
@@ -39,6 +43,7 @@ class AppWindow(QMainWindow, DataView):
         self.ui.setupUi(self)
         self.set_data_manager(DataManager())
         self.setCentralWidget(self.ui.fourpane)
+        self.setAcceptDrops(True)
         return None
 
 
@@ -83,7 +88,7 @@ class AppWindow(QMainWindow, DataView):
         print(f'Open Image: {file}')
         img = SkullEngineMask.read(file, has_phi=False)
         dm.add_mask(img)
-        self.data_changed()        
+        self.data_changed()
 
 
 
@@ -116,6 +121,9 @@ class AppWindow(QMainWindow, DataView):
 
     @Slot(bool)
     def on_actionResampleApply_triggered(self, checked):
+        dm = self.get_data_manager()
+        dm.resample(new_spacing=(5,5,5))
+        self.data_changed()
         print('Resample Apply')
 
 
@@ -123,6 +131,38 @@ class AppWindow(QMainWindow, DataView):
     def on_actionResampleParameters_triggered(self, checked):
         print('Resample Parameters')
     
+
+    # Drag and Drop
+    # https://doc.qt.io/qtforpython-6/overviews/dnd.html
+
+    def dragEnterEvent(self, event):
+
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if len(urls) > 1:
+                event.dropAction()
+            else:
+                event.acceptProposedAction()
+
+
+
+    def dropEvent(self, event):
+
+        file = event.mimeData().urls()[0].path()
+        file = file.strip('/')
+        dm = self.get_data_manager()
+        if dm.scan_is_loaded():
+            raise ValueError('image is already loaded and cannot be changed')
+        
+        print(f'Open Image: {file}')
+        img = SkullEngineScan.read(file, has_phi=False)
+        dm.set_scan(img)
+        self.data_changed()
+        event.acceptProposedAction()
+
+        return None
+
+
 
     #     file_path = QFileDialog.getOpenFileName(dir=r'C:\data\pre-post-paired-with-dicom\n0002\20100921-pre')[0]
     #     image_id = datetime.strftime(datetime.now(), '%Y-%m-%d-%H-%M-%S-%f')

@@ -19,7 +19,7 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
 from PySide6.QtWidgets import (QApplication, QMainWindow, QMenu, QMenuBar,
     QSizePolicy, QStatusBar, QWidget)
 
-from fourpane import FourPaneWindow
+from .fourpane import FourPaneWindow
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):

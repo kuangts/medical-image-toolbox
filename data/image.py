@@ -1,9 +1,15 @@
 import os
+from time import perf_counter
+from typing import List, Dict
+import dataclasses
+from dataclasses import dataclass, fields, field
+from collections import namedtuple
 import SimpleITK as sitk
 import numpy as np
+from scipy.ndimage import zoom
 from vtkmodules.vtkCommonDataModel import vtkImageData
-from vtkmodules.util.numpy_support import numpy_to_vtk
-
+from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
+from vtkmodules.vtkCommonCore import vtkDataArray
 
 ALLOW_PHI = True
 CAN_ERASE_PHI_AT_INIT = True
@@ -35,13 +41,14 @@ def read_dicom(filepath, *, rescale=False, **kw):
         if img.HasMetaDataKey('0028|1052') and img.HasMetaDataKey('0028|1053'):
             b,m = float(img.GetMetaData('0028|1052')), float(img.GetMetaData('0028|1053')) # Rescale Intercept, Rescale Slope
         else:
-            b,m = -1024., 1.
+            b,m = -1024., 1. # this is a compramise for current situation
         
         img = (img-m) / m
 
     return img
 
 
+@dataclass(kw_only=True)
 class ImageFrame:
     ''' this class encaps the size, spacing, and origin information of medical scans and segmentation masks.
     dimensions are ordered as +x, +y, +z
@@ -50,48 +57,129 @@ class ImageFrame:
         for legacy reasons, arrays decoded from AnatomicAligner bin file are ordered (-z, -y, +x), so a reversal is needed immediately on axial and coronal axes.
     '''
 
-    def __init__(self, *, size:tuple, spacing:tuple, origin:tuple) -> None:
-        self.size = size
-        self.spacing = spacing
-        self.origin = origin
-        return None
+    size: tuple[int, int, int]
+    spacing:tuple[float, float, float]
+    origin:tuple[float, float, float]
 
 
 
-class Image:
+@dataclass(kw_only=True)
+class ImageIdentifier:
+    id:str = '' # for other part of program to find this image
+    metadata:dict = field(default_factory=dict) # tags carried over from image file
+    has_phi:bool = False
 
-    def __init__(self, *, data, frame, has_phi, identifier='', metadata={}, **kw):
+    def __post_init__(self):
+        # Loop through the fields
+        for field in fields(self):
+            # If there is a default and the value of the field is none we can assign a value
+            if not isinstance(field.default, dataclasses._MISSING_TYPE) and getattr(self, field.name) is None:
+                setattr(self, field.name, field.default)
 
-        self.data = data
-        self.frame = frame
+
+    def erase_phi(self, **kw):
+        # for now, delete all metadata
+        self.metadata.clear()
+        self.has_phi = False
+
+
+    def confirm_phi(self, *, has_phi):
         self.has_phi = has_phi
+
+        if has_phi:
+            if ALLOW_PHI:
+                pass
+
+            elif CAN_ERASE_PHI_AT_INIT:
+                self.erase_phi()
+
+            else:
+                raise ValueError(
+                    "This program allows only non-PHI data"
+                )
+
+
+
+# @dataclass(kw_only=True)
+class Image:
+    # data:vtkDataArray
+    # frame:ImageFrame
+    # identifier:ImageIdentifier
+    # actions:list = field(default_factory=list)
+    # extra:dict = field(default_factory=dict)
+
+
+    def __init__(self, *, frame:ImageFrame, identifier:ImageIdentifier, data:vtkDataArray=None, actions=[], extra={}) -> None:
+        self.frame = ImageFrame(size=frame.size, spacing=frame.spacing, origin=frame.origin)
         self.identifier = identifier
-        self.metadata = metadata
-        for k,v in kw.items():
-            setattr(self, k, v)
-        return None
-
-
-    @classmethod
-    def read(cls,
-                 filepath,
-                 has_phi=True,      # whether the sitk image has PHI metadata attached
-                 **kw,
-                 ):
+        self.actions = actions
+        self.extra = extra
+        if data is None:
+            arr = np.zeros(frame.size[::-1], dtype=np.int32)
+            data = numpy_to_vtk(arr.flat, deep=0)
+        self.data = data
         
 
-        if 'imageIO' not in kw or kw['imageIO'] == "GDCMImageIO":
+
+    def numpy_array(self) -> np.ndarray: # points to the same data in memory
+        t = perf_counter()
+        arr = vtk_to_numpy(self.data)
+        arr.shape = self.frame.size[::-1]
+        return arr
+    
+
+    @classmethod
+    def read(cls, filepath, opts):
+        
+        img = None
+
+        if 'imageIO' not in opts or opts['imageIO'] == "GDCMImageIO":
             try:
-                img = read_dicom(filepath, **kw)
+                img = read_dicom(filepath, **opts)
             except:
                 pass
 
-        img = sitk.ReadImage(filepath, 
-                              kw['outputPixelType'] if 'outputPixelType' in kw else sitk.sitkUnknown, 
-                              kw['imageIO'] if 'imageIO' in kw else ''
+        if img is None:
+            img = sitk.ReadImage(filepath, 
+                              opts['outputPixelType'] if 'outputPixelType' in opts else sitk.sitkUnknown, 
+                              opts['imageIO'] if 'imageIO' in opts else ''
                               )
-            
-        data = sitk.GetArrayFromImage(img)
+        
+        obj = cls.from_itk(img)
+        obj.actions.append((
+            'read', filepath, opts,
+        ))
+
+        return obj
+    
+
+    def save(self, filepath):
+        sitk.WriteImage(self.itk(), filepath, imageIO='NiftiImageIO')
+        return None
+    
+
+    @classmethod
+    def from_vtk(cls, img:vtkImageData, **kw):
+        # kw is passed to __init__
+        arr = img.GetPointData().GetScalars()
+        frame = ImageFrame(
+                        size=img.GetDimensions(),
+                        spacing=img.GetSpacing(),
+                        origin=img.GetOrigin(),
+                        )
+
+        identifier = ImageIdentifier()
+
+        return cls(data=arr, frame=frame, identifier=identifier, **kw)
+
+
+    @classmethod
+    def from_itk(cls, img:sitk.Image, **kw):
+
+        # kw is passed to __init__
+
+        arr = sitk.GetArrayFromImage(img)
+        arr = numpy_to_vtk(arr.flat, deep=0)
         frame = ImageFrame(
                         size=img.GetSize(),
                         spacing=img.GetSpacing(),
@@ -100,97 +188,96 @@ class Image:
 
         # more processing before image is ready to use
         metadata = {}
+        for key in img.GetMetaDataKeys():
+            metadata[key] = img.GetMetaData(key)
 
-        if ALLOW_PHI:
-            for key in img.GetMetaDataKeys():
-                metadata[key] = img.GetMetaData(key)
+        identifier = ImageIdentifier(metadata=metadata)
 
-        elif has_phi:
-
-            if CAN_ERASE_PHI_AT_INIT:
-                metadata = {}
-                has_phi = False
-
-            else:
-                raise ValueError(
-                    "This program allows only non-PHI data"
-                )
-        
-        return cls(data=data, frame=frame, has_phi=has_phi, identifier=filepath, metadata=metadata)
-    
-
-    def save(self, filepath):
-        sitk.WriteImage(self.itk(), filepath, imageIO='NiftiImageIO')
-        return None
-    
+        return cls(data=arr, frame=frame, identifier=identifier, **kw)
 
 
     def itk(self, *, with_metadata=False):
-        arr = self.data
-        if arr.dtype == bool:
-            arr = arr.astype(np.int8)
-        img = sitk.GetImageFromArray(arr)
+        img = sitk.GetImageFromArray(self.numpy_array())
         img.SetOrigin(self.frame.origin)
         img.SetSpacing(self.frame.spacing)
         if with_metadata:
-            for k,v in self.metadata.items():
-                img.SetMetaData(k,self.metadata(v))
+            for k,v in self.identifier.metadata.items():
+                img.SetMetaData(k, v)
 
         return img
     
 
     def vtk(self):
-        arr = self.data
-        if arr.dtype == bool:
-            arr = arr.astype(np.int8)
-        arr = numpy_to_vtk(arr.flatten(), deep=True)
-        vtk_img = vtkImageData()
-        vtk_img.GetPointData().SetScalars(arr)
-        vtk_img.SetOrigin(self.frame.origin)
-        vtk_img.SetDimensions(self.data.shape[::-1])
-        vtk_img.SetSpacing(self.frame.spacing)
-        # vtk_img.SetDirectionMatrix(sitk_img.GetDirection())
-        return vtk_img
-
+        img = vtkImageData()
+        img.GetPointData().SetScalars(self.data)
+        img.SetOrigin(self.frame.origin)
+        img.SetDimensions(self.frame.size)
+        img.SetSpacing(self.frame.spacing)
+        # img.SetDirectionMatrix(sitk_img.GetDirection())
+        return img
 
 
 class SkullEngineScan(Image):
     '''this class reads and writes medical scans in common formats'''
 
-
     @classmethod
     def read_bin_aa(cls, filepath, frame:ImageFrame):
         '''reads medical scans saved in AnatomicAligner bin file'''
-        bytes = np.fromfile(filepath, dtype=np.int16)
-        arr = bytes.reshape(frame.size[::-1])[::-1,::-1,:]
-        return cls(data=arr, frame=frame, has_phi=False, identifier=filepath)
+        arr = np.fromfile(filepath, dtype=np.int16)
+        arr = arr.reshape(frame.size[::-1])[::-1,::-1,:]
+        t = perf_counter()
+        arr = numpy_to_vtk(arr.flat, deep=0)
+        print(f'to vtk: {perf_counter()-t} seconds')
+        img = cls(data=arr, frame=frame, identifier=ImageIdentifier())
+        img.actions.append((
+            'read_bin_aa', filepath, frame
+        ))
+        return img
     
-
     def write_bin_aa(self, filepath):
         '''writes medical scans to AnatomicAligner bin file'''
-        bytes = np.ravel(self.data[::-1,::-1,:].astype(np.int16), order='C') # possible loss of precision since AA always uses int16
+        arr = self.numpy_array()
+        bytes = np.ravel(arr[::-1,::-1,:].astype(np.int16), order='C') # possible loss of precision since AA always uses int16
         return bytes.tofile(filepath)
 
 
     @classmethod
-    def read(cls, filepath, **kw):
-        return super().read(filepath, rescale=True, **kw) # rescale is for dicom
+    def read(cls, filepath, *, has_phi, **kw):
+        img = super().read(filepath, opts=dict(rescale=True), **kw) # rescale is for dicom
+        img.identifier.confirm_phi(has_phi=has_phi)
+        
+        return img
+        
+
+    def resample(self, *, new_spacing):
+        z = np.array(self.frame.spacing)/np.array(new_spacing)
+        arr = self.numpy_array()
+        arr = zoom(arr, zoom=z[::-1], mode='nearest', grid_mode=True).astype(arr.dtype)
+        new_size = arr.shape[::-1]
+
+        self.data = numpy_to_vtk(arr.flat, deep=0)
+        self.frame.size = new_size
+        self.frame.spacing = new_spacing
+
+        # img = self.itk()
+        # img = sitk.Resample(
+        #     img, img.GetSize(),
+        #     sitk.Transform(),
+        #     sitk.sitkLinear,
+        #     img.GetOrigin(),
+        #     new_spacing,
+        #     img.GetDirection(),
+        #     sitk.sitkUnknown,
+        #     True)
+
 
 
 class SkullEngineMask(Image):
-    pass
+    '''this class encaps IO methods of segmentation masks of medical scans
+    it is agnostic to what is stored in its data'''
 
-
-class SkullEngineSingleRoiMask(Image):
-    '''this class encaps IO methods of segmentation masks of medical scans'''
-
-
-    def __init__(self, *, data, frame, has_phi, identifier='', metadata={}, **kw):
-        if data.dtype != bool:
-            print(f'creating single ROI mask from {data.dtype} data; might result in loss of ROIs')
-            data = data>0
-        super().__init__(data=data, frame=frame, has_phi=has_phi, identifier=identifier, metadata=metadata, **kw)
-
+    def __init__(self, **kw):
+        super().__init__(**kw)
 
 
     @classmethod
@@ -204,12 +291,13 @@ class SkullEngineSingleRoiMask(Image):
                 bytes[i],
                 bytes[i+1]:bytes[i+1]+bytes[i+2]
                 ] = True
-        arr = arr[::-1,::-1,:]
-        return cls(data=arr, frame=frame, has_phi=False, identifier=filepath)
-        
+        arr = arr[::-1,::-1,:].astype(np.int8) # this is a single roi mask, so we use a more efficient data type
+        arr = numpy_to_vtk(arr.flat, deep=0)
+        return cls(data=arr, frame=frame, identifier=ImageIdentifier())
+
 
     def write_bin_aa(self, filepath, split_if_multiple_found=True):
-        arr = self.data[::-1,::-1,:]
+        arr = self.numpy_array()[::-1,::-1,:]
         vals = np.unique(arr)
         vals = vals[vals!=0]
         multiple_found = len(vals) > 1
@@ -237,25 +325,28 @@ class SkullEngineSingleRoiMask(Image):
     
     @classmethod
     def read(cls, filepath, **kw):
-        return super().read(filepath, rescale=False, **kw) # rescale is for dicom
+        return super().read(filepath, opts=dict(rescale=False), **kw) # rescale is for dicom
 
 
-class SkullEngineMultipleRoiMask(Image):
-    '''this class encaps IO methods of segmentation masks of medical scans with multiple ROIs'''
+    def resample(self, *, new_spacing):
+        z = np.array(self.frame.spacing)/np.array(new_spacing)
+        arr = self.numpy_array()
+        arr = zoom(arr, zoom=z[::-1], mode='grid-constant', order=0, cval=0, grid_mode=True).astype(arr.dtype)
+        new_size = arr.shape[::-1]
 
+        self.data = numpy_to_vtk(arr.flat, deep=0)
+        self.frame.size = new_size
+        self.frame.spacing = new_spacing
 
-    
-
-    @classmethod
-    def combine(cls, *args:list[Image]):
-        # masks must be mutually disjoint
-        arr = args[0].data.copy()
-        # frame = 
-        arr = np.zeros(frame.size[::-1])
-        for i, f in enumerate(filepath):
-            m = cls.read_bin_aa(f, frame=frame)
-            arr[m.data>0] = i
-        
-        return SkullEngineMultipleROIMask(data=arr, frame=frame, has_phi=False, identifier=';'.join(filepath))
+        # img = self.itk()
+        # img = sitk.Resample(
+        #     img, img.GetSize(),
+        #     sitk.Transform(),
+        #     sitk.sitkLinear,
+        #     img.GetOrigin(),
+        #     new_spacing,
+        #     img.GetDirection(),
+        #     sitk.sitkUnknown,
+        #     True)
 
 

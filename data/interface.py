@@ -1,82 +1,5 @@
 from abc import ABC, abstractmethod
-from .image import SkullEngineScan, SkullEngineMask
-
-
-class DataManager:
-
-    def __init__(self) -> None:
-        return None
-    
-
-    def set_scan(self, _img:SkullEngineScan) -> None:
-
-        '''loading the scan triggers a few actions, such as setting up the masks, etc.'''
-
-        if self.scan_is_loaded():
-            raise ValueError('image is already loaded and cannot be changed')
-        else:
-            self.scan = _img
-
-        return None
-
-
-    def add_mask(self, _m:SkullEngineMask) -> None:
-        if not hasattr(self, 'mask_list'):
-            self.mask_list = []
-        self.mask_list.append(_m)
-
-
-    def scan_is_loaded(self) -> bool:
-
-        if hasattr(self, 'scan') and self.scan:
-            return True
-        else:
-            return False 
-
-
-    def get_number_of_masks(self) -> int:
-        if not hasattr(self, 'mask_list'):
-            return 0
-        return len(self.mask_list)
-
-
-    def get_scan(self) -> SkullEngineScan:
-
-        if self.scan_is_loaded():
-            return self.scan
-        else:
-            return None
-
-
-    def get_mask(self, i:int) -> SkullEngineMask:
-
-        if i >= 0 and i < self.get_number_of_masks():
-            return self.mask_list[i]
-        else:
-            return None
-
-
-    def get_mask_list(self):
-
-        if not hasattr(self, 'mask_list'):
-            self.mask_list = []
-
-        return self.mask_list
-
-
-    def get_blended_image(self):
-
-        if self.scan_is_loaded():
-            img = self.get_scan()
-            if self.get_number_of_masks():
-                pass
-                
-
-
-    def get_blended_image_port(self):
-        pass
-
-
+from .manager import DataManager
 
 class DataView:
 
@@ -94,7 +17,6 @@ class DataView:
             except:
                 _p._data_manager = _data_manager
                 return None
-
 
 
     def get_data_manager(self) -> DataManager:
