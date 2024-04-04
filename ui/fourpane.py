@@ -31,7 +31,8 @@ from vtkmodules.vtkRenderingCore import (
     vtkDataSetMapper,
     vtkRenderWindow,
     vtkRenderWindowInteractor,
-    vtkRenderer
+    vtkRenderer,
+    vtkColorTransferFunction
 )
 from vtkmodules.vtkCommonExecutionModel import vtkAlgorithmOutput
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
@@ -46,7 +47,7 @@ from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter, vtkDiscrete
 from vtkmodules.vtkIOImage import vtkNIFTIImageReader
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkIOGeometry import vtkSTLReader, vtkSTLWriter
-from vtkmodules.vtkImagingCore import vtkImageThreshold
+from vtkmodules.vtkImagingCore import vtkImageThreshold, vtkImageMapToColors, vtkImageBlend
 from vtkmodules.vtkCommonCore import vtkPoints
 
 # noinspection PyUnresolvedReferences
@@ -55,7 +56,9 @@ import vtkmodules.vtkInteractionStyle
 import vtkmodules.vtkRenderingOpenGL2
 from vtkmodules.vtkCommonCore import (
     VTK_VERSION_NUMBER,
-    vtkVersion
+    vtkVersion,
+    vtkScalarsToColors,
+    vtkLookupTable,
 )
 from vtkmodules.vtkCommonDataModel import (
     vtkDataObject,
@@ -217,7 +220,7 @@ class FourPaneWindow(QWidget, DataView):
         # self.iren_sagittal.viewer.GetResliceCursorWidget().AddObserver(vtkResliceCursorWidget.ResliceAxesChangedEvent, self.axis_changed)
 
 
-        self.data_changed() # this is to silent error from vtk before image is loaded
+        self.data_reload() # this is to silent error from vtk before image is loaded
 
         # put 4 subviews on a 2x2 grid
         self.gridlayout = QGridLayout(parent=self)
@@ -239,24 +242,75 @@ class FourPaneWindow(QWidget, DataView):
 
 
     def get_image(self) -> vtkImageData:
-        # blend image with masks
+        # blend scan with masks
+
         dm = self.get_data_manager()
         if dm is None or not dm.scan_is_loaded():
-            return None
-        return dm.get_scan().vtk()
+            return vtkImageData()
+        
+        img = dm.get_scan().vtk()
+
+        # img_lut = vtkScalarsToColors()
+        # img_lut.SetRange(img.GetScalarRange())
+
+        img_lut = vtkLookupTable()
+        img_lut.SetRange(img.GetScalarRange()) # image intensity range
+        img_lut.SetValueRange(0.0, 1.0) # from bkg to white
+        img_lut.SetSaturationRange(0.0, 0.0) # no color saturation
+        img_lut.SetRampToLinear()
+        img_lut.Build()
+
+        img_rgb = vtkImageMapToColors()
+        img_rgb.SetInputData(img)
+        img_rgb.SetLookupTable(img_lut)
+        img_rgb.SetOutputFormatToRGB()
+        img_rgb.Update()
+
+        msk = dm.get_mask().vtk()
+        msk_lut = vtkColorTransferFunction()
+        msk_lut.AddRGBPoint(0.,0.,0.,0.)
+        msk_lut.AddRGBPoint(1.,1.,0.,0.)
+        msk_lut.AddRGBPoint(2.,0.,1.,0.)
+        msk_lut.AddRGBPoint(4.,0.,0.,1.)
+        msk_lut.Build()
+
+        msk_rgb = vtkImageMapToColors()
+        msk_rgb.SetInputData(msk)
+        msk_rgb.SetLookupTable(msk_lut)
+        msk_rgb.SetOutputFormatToRGB()
+        msk_rgb.PassAlphaToOutputOn()
+        msk_rgb.Update()
+
+        blender = vtkImageBlend()
+        blender.AddInputConnection(img_rgb.GetOutputPort())
+        blender.AddInputConnection(msk_rgb.GetOutputPort())
+        blender.SetOpacity(0, 0.5)
+        blender.SetOpacity(1, 0.5)
+        blender.Update()
+        self._img_blend = blender
+
+        img = img_rgb.GetOutput()
+
+        return blender.GetOutput()
 
 
+    def data_update(self) -> None:
+        if hasattr(self, '_img_blend'):
+            self._img_blend.Update() # must have, updates imagedata for viewers
+            self.iren_sagittal.viewer.Render()
+            self.iren_axial.viewer.Render()
+            self.iren_coronal.viewer.Render()
+        
 
-    def data_changed(self, *args, **kw) -> None:
+
+    def data_reload(self, *args, **kw) -> None:
 
         vtk_img = self.get_image()
-        if vtk_img:
-            
-            self.iren_sagittal.viewer.SetInputData(vtk_img)
-            self.iren_axial.viewer.SetInputData(vtk_img)
-            self.iren_coronal.viewer.SetInputData(vtk_img)
-            
-            self.reslice_signal.emit(*vtk_img.GetCenter())
+
+        self.iren_sagittal.viewer.SetInputData(vtk_img)
+        self.iren_axial.viewer.SetInputData(vtk_img)
+        self.iren_coronal.viewer.SetInputData(vtk_img)
+        self.reslice_signal.emit(*vtk_img.GetCenter())
         
         return None
     

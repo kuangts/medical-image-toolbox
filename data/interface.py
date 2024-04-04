@@ -34,6 +34,15 @@ class DataView:
 
 
     @abstractmethod
-    def data_changed(self, *args, **kw) -> None:
+    def data_reload(self, *args, **kw) -> None:
+        '''rebuild pipeline'''
         pass
+
+
+
+    @abstractmethod
+    def data_update(self, *args, **kw) -> None:
+        '''update pipeline'''
+        pass
+
 

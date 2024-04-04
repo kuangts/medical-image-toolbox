@@ -3,7 +3,7 @@ import sys
 import os
 from datetime import datetime
 
-
+import numpy as np
 from PySide6.QtGui import QDragEnterEvent
 from PySide6.QtWidgets import QApplication, QMainWindow
 
@@ -53,10 +53,19 @@ class AppWindow(QMainWindow, DataView):
         return None
 
 
-    def data_changed(self, *args, **kw):
+    def data_update(self, *args, **kw):
         for v in self.children():
             if isinstance(v, DataView):
-                v.data_changed(*args, **kw)
+                v.data_update(*args, **kw)
+
+        return None
+
+
+
+    def data_reload(self, *args, **kw):
+        for v in self.children():
+            if isinstance(v, DataView):
+                v.data_reload(*args, **kw)
 
         return None
 
@@ -72,7 +81,7 @@ class AppWindow(QMainWindow, DataView):
         print(f'Open Image: {file}')
         img = SkullEngineScan.read(file, has_phi=False)
         dm.set_scan(img)
-        self.data_changed()        
+        self.data_reload()
 
         return None
 
@@ -81,14 +90,15 @@ class AppWindow(QMainWindow, DataView):
     def on_actionOpenMask_triggered(self, checked):
 
         dm = self.get_data_manager()
-        if dm.scan_is_loaded():
-            raise ValueError('image is already loaded and cannot be changed')
+        if not dm.scan_is_loaded():
+            raise ValueError('load image first')
         
         file, _ = QFileDialog.getOpenFileName()
-        print(f'Open Image: {file}')
-        img = SkullEngineMask.read(file, has_phi=False)
-        dm.add_mask(img)
-        self.data_changed()
+        print(f'Open Mask: {file}')
+        img = SkullEngineMask.read(file)
+        mask_arr = img.numpy_array()
+        dm.add_mask(arr=mask_arr)
+        self.data_update()
 
 
 
@@ -123,7 +133,7 @@ class AppWindow(QMainWindow, DataView):
     def on_actionResampleApply_triggered(self, checked):
         dm = self.get_data_manager()
         dm.resample(new_spacing=(5,5,5))
-        self.data_changed()
+        self.data_reload()
         print('Resample Apply')
 
 
@@ -151,13 +161,20 @@ class AppWindow(QMainWindow, DataView):
         file = event.mimeData().urls()[0].path()
         file = file.strip('/')
         dm = self.get_data_manager()
-        if dm.scan_is_loaded():
-            raise ValueError('image is already loaded and cannot be changed')
         
-        print(f'Open Image: {file}')
-        img = SkullEngineScan.read(file, has_phi=False)
-        dm.set_scan(img)
-        self.data_changed()
+        if not dm.scan_is_loaded():
+            print(f'Open Image: {file}')
+            img = SkullEngineScan.read(file, has_phi=False)
+            dm.set_scan(img)
+            self.data_reload()
+        else:
+            print(f'Open Mask: {file}')
+            img = SkullEngineScan.read(file, has_phi=False)
+            mask_arr = img.numpy_array()
+            dm.add_mask(arr=mask_arr)
+            self.data_update()
+
+
         event.acceptProposedAction()
 
         return None
