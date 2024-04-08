@@ -28,9 +28,8 @@ from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
 from .mainwindow_ui import Ui_MainWindow
 from .fourpane import FourPaneWindow
-from ..data.interface import DataManager, DataView
-from ..data.image import SkullEngineMask, SkullEngineScan
-
+from .dialogs import *
+from ..data import DataManager, DataView, SkullEngineMask, SkullEngineScan
 
 DEFAULT_RESAMPLING_REGULATION = (1,1,3)
 
@@ -39,9 +38,16 @@ class AppWindow(QMainWindow, DataView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+
+        # set ui
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        self.set_data_manager(DataManager())
+
+        # set data manager
+        dm = DataManager()
+        self.set_data_manager(dm)
+
+        # other
         self.setCentralWidget(self.ui.fourpane)
         self.setAcceptDrops(True)
         return None
@@ -59,7 +65,6 @@ class AppWindow(QMainWindow, DataView):
                 v.data_update(*args, **kw)
 
         return None
-
 
 
     def data_reload(self, *args, **kw):
@@ -81,7 +86,6 @@ class AppWindow(QMainWindow, DataView):
         print(f'Open Image: {file}')
         img = SkullEngineScan.read(file, has_phi=False)
         dm.set_scan(img)
-        self.data_reload()
 
         return None
 
@@ -128,18 +132,35 @@ class AppWindow(QMainWindow, DataView):
         img.save(file)
 
 
+    @Slot(bool)
+    def on_actionSetOrigin_triggered(self, checked):
+        print('Setting Origin ...')
+        origin = self.get_data_manager().get_scan().frame.origin
+        d = SetOriginDialog(self)
+        d.show(origin=origin)
+
 
     @Slot(bool)
-    def on_actionResampleApply_triggered(self, checked):
-        dm = self.get_data_manager()
-        dm.resample(new_spacing=(5,5,5))
-        self.data_reload()
-        print('Resample Apply')
+    def on_actionResample_triggered(self, checked):
+        print('Resampling ...')
+        spacing = self.get_data_manager().get_scan().frame.spacing
+        d = ResampleDialog(self)
+        d.show(spacing=spacing)
 
 
     @Slot(bool)
-    def on_actionResampleParameters_triggered(self, checked):
-        print('Resample Parameters')
+    def on_actionConfSeg_triggered(self, checked):
+        print('Configure Segmentation')
+    
+
+    @Slot(bool)
+    def on_actionStartSeg_triggered(self, checked):
+        print('Start Segmentation')
+
+
+    @Slot(bool)
+    def on_actionEraseMeta_triggered(self, checked):
+        print('Erase PHI')
     
 
     # Drag and Drop
@@ -173,7 +194,6 @@ class AppWindow(QMainWindow, DataView):
             mask_arr = img.numpy_array()
             dm.add_mask(arr=mask_arr)
             self.data_update()
-
 
         event.acceptProposedAction()
 

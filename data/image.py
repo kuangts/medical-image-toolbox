@@ -12,6 +12,8 @@ from vtkmodules.vtkCommonDataModel import vtkImageData
 from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 from vtkmodules.vtkCommonCore import vtkDataArray
 
+from .base import SkullEngineAsset
+
 ALLOW_PHI = True
 CAN_ERASE_PHI_AT_INIT = True
 MASK_PIXEL_TYPE = sitk.sitkUInt32
@@ -128,7 +130,7 @@ class ImageIdentifier:
 
 
 # @dataclass(kw_only=True)
-class Image:
+class Image(SkullEngineAsset):
     '''this is the base class of all image assets used in this program
     it contains at least the following five attributes:
         data: an vtk data array of the pixel value, of size Nx1

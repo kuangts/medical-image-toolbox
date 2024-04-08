@@ -3,17 +3,22 @@ import subprocess
 from tempfile import TemporaryDirectory
 import numpy as np
 import SimpleITK as sitk
-from .image import ImageFrame, ImageIdentifier, SkullEngineScan, SkullEngineMultiRoiMask, MASK_DTYPE, MASK_PIXEL_TYPE
+from PySide6.QtCore import Qt, Signal, Slot, QEvent, QObject
+from .image import ImageFrame, ImageIdentifier, SkullEngineAsset, SkullEngineScan, SkullEngineMultiRoiMask, MASK_DTYPE, MASK_PIXEL_TYPE
 RAR_PROG = 'C:\\Program Files\\WinRAR\\Rar.exe'
-class DataManager:
+
+
+class DataManager(QObject):
     '''this class handles the internal logic of data assets, including scan, masks, 3d models, etc.
     specifically, it can load exactly one scan'''
 
+    dataReloaded = Signal(SkullEngineAsset)
+    dataUpdated = Signal(SkullEngineAsset)
 
-    def __init__(self) -> None:
-        # self.image = None
-        # self.object_list = []
-        return None
+    # def __init__(self) -> None:
+    #     # self.image = None
+    #     # self.object_list = []
+    #     return None
 
 
     def reset(self) -> None:
@@ -71,6 +76,7 @@ class DataManager:
             self.scan = _img
             self.mask = SkullEngineMultiRoiMask.empty(frame=self.scan.frame)
 
+        self.dataReloaded(_img)
         return None
 
 
@@ -116,8 +122,11 @@ class DataManager:
                         if new_id not in self.get_mask_ids():
                             self.get_mask_ids().append(new_id)
                         self.mask.set_true(mask_id=new_id, voxel_index=arr==v)
-        self.mask.data.Modified()
+
+        self.dataUpdated.emit(self.get_mask())
+        
         return None
+        
     
 
     def scan_is_loaded(self) -> bool:

@@ -38,25 +38,32 @@
     <addaction name="separator"/>
     <addaction name="actionExit"/>
    </widget>
-   <widget class="QMenu" name="menuResample">
-    <property name="title">
-     <string>Resample</string>
-    </property>
-    <addaction name="actionResampleParameters"/>
-    <addaction name="separator"/>
-    <addaction name="actionResampleApply"/>
-   </widget>
    <widget class="QMenu" name="menuSegmentation">
     <property name="title">
      <string>Segmentation</string>
     </property>
-    <addaction name="actionConfigure"/>
+    <addaction name="actionConfSeg"/>
     <addaction name="separator"/>
-    <addaction name="actionStart"/>
+    <addaction name="actionStartSeg"/>
+   </widget>
+   <widget class="QMenu" name="menuImage">
+    <property name="title">
+     <string>Image</string>
+    </property>
+    <addaction name="actionSetOrigin"/>
+    <addaction name="actionEraseMeta"/>
+    <addaction name="actionResample"/>
+   </widget>
+   <widget class="QMenu" name="menu3D_Model">
+    <property name="title">
+     <string>3D Model</string>
+    </property>
+    <addaction name="actionTransform"/>
    </widget>
    <addaction name="menuFile"/>
-   <addaction name="menuResample"/>
+   <addaction name="menuImage"/>
    <addaction name="menuSegmentation"/>
+   <addaction name="menu3D_Model"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionOpenImage">
@@ -96,27 +103,58 @@
     <string>Exit</string>
    </property>
   </action>
-  <action name="actionResampleParameters">
-   <property name="text">
-    <string>Set Parameters</string>
-   </property>
-  </action>
-  <action name="actionResampleApply">
-   <property name="text">
-    <string>Apply</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+R</string>
-   </property>
-  </action>
-  <action name="actionConfigure">
+  <action name="actionConfSeg">
    <property name="text">
     <string>Configure</string>
    </property>
+   <property name="toolTip">
+    <string>Configure remote server for automatic segmentation</string>
+   </property>
   </action>
-  <action name="actionStart">
+  <action name="actionStartSeg">
    <property name="text">
     <string>Start</string>
+   </property>
+   <property name="toolTip">
+    <string>Start automatic segmentation</string>
+   </property>
+   <property name="shortcut">
+    <string>S</string>
+   </property>
+  </action>
+  <action name="actionSetOrigin">
+   <property name="text">
+    <string>Set Origin</string>
+   </property>
+   <property name="toolTip">
+    <string>Translating the image by setting a new origin</string>
+   </property>
+   <property name="shortcut">
+    <string>O</string>
+   </property>
+  </action>
+  <action name="actionEraseMeta">
+   <property name="text">
+    <string>Erase Metadata</string>
+   </property>
+   <property name="toolTip">
+    <string>Remove all metadata associated with the image (including patient health information)</string>
+   </property>
+   <property name="shortcut">
+    <string>D</string>
+   </property>
+  </action>
+  <action name="actionResample">
+   <property name="text">
+    <string>Resample</string>
+   </property>
+   <property name="shortcut">
+    <string>R</string>
+   </property>
+  </action>
+  <action name="actionTransform">
+   <property name="text">
+    <string>Transform</string>
    </property>
   </action>
  </widget>

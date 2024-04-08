@@ -1,0 +1,3 @@
+
+class SkullEngineAsset: 
+    pass

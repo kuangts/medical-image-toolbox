@@ -295,6 +295,8 @@ class FourPaneWindow(QWidget, DataView):
 
 
     def data_update(self) -> None:
+        # this class is responsible for updating all its subviews
+
         if hasattr(self, '_img_blend'):
             self._img_blend.Update() # must have, updates imagedata for viewers
             self.iren_sagittal.viewer.Render()
@@ -304,13 +306,19 @@ class FourPaneWindow(QWidget, DataView):
 
 
     def data_reload(self, *args, **kw) -> None:
+        # this class is responsible for updating all its subviews
 
         vtk_img = self.get_image()
-
+        
         self.iren_sagittal.viewer.SetInputData(vtk_img)
         self.iren_axial.viewer.SetInputData(vtk_img)
         self.iren_coronal.viewer.SetInputData(vtk_img)
+
         self.reslice_signal.emit(*vtk_img.GetCenter())
+
+        # self.iren_sagittal.viewer.Render()
+        # self.iren_axial.viewer.Render()
+        # self.iren_coronal.viewer.Render()
         
         return None
     
@@ -333,6 +341,7 @@ class FourPaneWindow(QWidget, DataView):
     def reslice(self, x, y, z):
 
         vtk_img = self.iren_sagittal.viewer.GetInput()
+        
         if vtk_img:
 
             # three views must be resliced at the same time
