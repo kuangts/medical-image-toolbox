@@ -30,6 +30,7 @@ class DataView:
             self._data_manager = _data_manager
             _data_manager.dataUpdated.connect(self.data_update)
             _data_manager.dataReloaded.connect(self.data_reload)
+            _data_manager.scanLoaded.connect(self.data_reload)
             return None
 
 
@@ -57,7 +58,6 @@ class DataView:
                 v.data_reload(*args, **kw)
 
         return None
-
 
 
     @Slot()

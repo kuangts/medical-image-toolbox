@@ -82,7 +82,7 @@ class AppWindow(QMainWindow, DataView):
         if dm.scan_is_loaded():
             raise ValueError('image is already loaded and cannot be changed')
         
-        file, _ = QFileDialog.getOpenFileName()
+        file, _ = QFileDialog.getOpenFileName(self, 'Open Image ...', '', "Image Files (*.nii.gz)")
         print(f'Open Image: {file}')
         img = SkullEngineScan.read(file, has_phi=False)
         dm.set_scan(img)
@@ -97,7 +97,7 @@ class AppWindow(QMainWindow, DataView):
         if not dm.scan_is_loaded():
             raise ValueError('load image first')
         
-        file, _ = QFileDialog.getOpenFileName()
+        file, _ = QFileDialog.getOpenFileName(self, 'Open Mask ...', '', "Image Files (*.nii.gz)")
         print(f'Open Mask: {file}')
         img = SkullEngineMask.read(file)
         mask_arr = img.numpy_array()
@@ -112,8 +112,8 @@ class AppWindow(QMainWindow, DataView):
         dm = self.get_data_manager()
         if not dm.scan_is_loaded():
             raise ValueError('no image to save')
-        
-        file, _ = QFileDialog.getSaveFileName()
+
+        file, _ = QFileDialog.getSaveFileName(self, 'Save Image to ...', '', "Image Files (*.nii.gz)")
         print(f'Save Image: {file}')
         img = dm.get_scan()
         img.save(file)
@@ -126,7 +126,7 @@ class AppWindow(QMainWindow, DataView):
         if not dm.scan_is_loaded():
             raise ValueError('no image to save')
         
-        file, _ = QFileDialog.getSaveFileName()
+        file, _ = QFileDialog.getSaveFileName(self, 'Save Mask to ...', '', "Image Files (*.nii.gz)")
         print(f'Save Mask: {file}')
         img = dm.get_scan()
         img.save(file)
@@ -187,13 +187,12 @@ class AppWindow(QMainWindow, DataView):
             print(f'Open Image: {file}')
             img = SkullEngineScan.read(file, has_phi=False)
             dm.set_scan(img)
-            self.data_reload()
+            
         else:
             print(f'Open Mask: {file}')
             img = SkullEngineScan.read(file, has_phi=False)
             mask_arr = img.numpy_array()
             dm.add_mask(arr=mask_arr)
-            self.data_update()
 
         event.acceptProposedAction()
 

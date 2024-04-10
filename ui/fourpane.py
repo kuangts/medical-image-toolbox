@@ -20,6 +20,7 @@ from vtkmodules.vtkInteractionWidgets import vtkPointCloudRepresentation, vtkPoi
 from vtkmodules.vtkCommonTransforms import vtkMatrixToLinearTransform, vtkTransform
 from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter, vtkTransformFilter
 from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D
+from vtkmodules.vtkImagingCore import vtkImageChangeInformation
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkActorCollection,
@@ -93,7 +94,7 @@ from enum import Enum, IntFlag, auto
 import numbers
 import asyncio
 
-from ..data.interface import DataManager, DataView 
+from ..data.interface import DataManager, DataView
 from ..data.image import SkullEngineScan, SkullEngineMask
 
 
@@ -157,26 +158,18 @@ class QVTKAxisAlignedWindow(QVTKRenderWindowInteractor):
         return None
     
 
-    def update_image(self, img):
-        self.viewer.SetInputData(img)
-        return None
-    
-
-
 
 
 class FourPaneWindow(QWidget, DataView):
     # this class is where all vtk events are handled
     # mode is controled by its parent on view hierarchy thru delegation
     # 
-    reslice_signal = Signal(float, float, float)
 
     def __init__(self, *initargs):
 
         super().__init__(*initargs)
 
-        self.reslice_signal.connect(self.reslice)
-
+        self.reslice_center = [0.,0.,0.]
 
         self.image_picker = vtkCellPicker()
         self.image_picker.SetTolerance(.01)
@@ -287,22 +280,23 @@ class FourPaneWindow(QWidget, DataView):
         blender.SetOpacity(0, 0.5)
         blender.SetOpacity(1, 0.5)
         blender.Update()
-        self._img_blend = blender
+        self.img_blender = blender
+
+        self.img_output_filter = blender
 
         img = img_rgb.GetOutput()
 
-        return blender.GetOutput()
+        return self.img_output_filter.GetOutput()
 
 
-    def data_update(self) -> None:
+    def data_update(self, *args, **kw) -> None:
         # this class is responsible for updating all its subviews
 
-        if hasattr(self, '_img_blend'):
-            self._img_blend.Update() # must have, updates imagedata for viewers
+        if hasattr(self, 'img_output_filter'):
+            self.img_output_filter.Update() # must have, updates imagedata for viewers
             self.iren_sagittal.viewer.Render()
             self.iren_axial.viewer.Render()
             self.iren_coronal.viewer.Render()
-        
 
 
     def data_reload(self, *args, **kw) -> None:
@@ -314,14 +308,13 @@ class FourPaneWindow(QWidget, DataView):
         self.iren_axial.viewer.SetInputData(vtk_img)
         self.iren_coronal.viewer.SetInputData(vtk_img)
 
-        self.reslice_signal.emit(*vtk_img.GetCenter())
+        self.reslice(*vtk_img.GetCenter())
 
         # self.iren_sagittal.viewer.Render()
         # self.iren_axial.viewer.Render()
         # self.iren_coronal.viewer.Render()
         
         return None
-    
     
 
     def left_button_press_event_image(self, obj:vtkInteractorStyleImage, event):
@@ -333,8 +326,7 @@ class FourPaneWindow(QWidget, DataView):
         pos = obj.GetInteractor().GetEventPosition()
         self.image_picker.Pick(pos[0], pos[1], 0, obj.GetDefaultRenderer())
         if self.image_picker.GetCellId() >= 0:
-            self.reslice_signal.emit(*self.image_picker.GetPickPosition())
-
+            self.reslice(*self.image_picker.GetPickPosition())
 
 
     @Slot(float, float, float)

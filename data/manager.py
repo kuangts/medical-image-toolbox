@@ -4,27 +4,43 @@ from tempfile import TemporaryDirectory
 import numpy as np
 import SimpleITK as sitk
 from PySide6.QtCore import Qt, Signal, Slot, QEvent, QObject
-from .image import ImageFrame, ImageIdentifier, SkullEngineAsset, SkullEngineScan, SkullEngineMultiRoiMask, MASK_DTYPE, MASK_PIXEL_TYPE
-RAR_PROG = 'C:\\Program Files\\WinRAR\\Rar.exe'
+from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
+from .base import *
+from .image import *
+from .util import *
+
+_RAR_EXE = 'C:\\Program Files\\WinRAR\\Rar.exe'
 
 
 class DataManager(QObject):
     '''this class handles the internal logic of data assets, including scan, masks, 3d models, etc.
-    specifically, it can load exactly one scan'''
-
-    dataReloaded = Signal(SkullEngineAsset)
-    dataUpdated = Signal(SkullEngineAsset)
-
-    # def __init__(self) -> None:
-    #     # self.image = None
-    #     # self.object_list = []
-    #     return None
+    it can load exactly one scan'''
 
 
-    def reset(self) -> None:
-        self.get_object_list().clear()
+    # qt signals
+    scanLoaded = Signal()
+    dataReloaded = Signal(SkullEngineData)
+    dataUpdated = Signal(SkullEngineData)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+
+        # all the data managed by self, each with its own unique identifier, is stored here
+        self.data_stack = []
+
+        # frame of reference, will be due x-y-z by default, and applies to all data managed therein, and should rarely change
+        self.frame = Frame()
+
+        # self.object_list = []
 
         return None
+
+
+
+    # def reset(self) -> None:
+    #     self.get_object_list().clear()
+
+    #     return None
     
 
     @classmethod
@@ -34,7 +50,7 @@ class DataManager(QObject):
         cwd = os.getcwd()
         with TemporaryDirectory() as d:
             os.chdir(d)
-            subprocess.run([RAR_PROG, 'x', '-idq', filepath, 'Patient_info.bin', 'Patient_data.bin', 'Mask_Info.bin'],
+            subprocess.run([_RAR_EXE, 'x', '-idq', filepath, 'Patient_info.bin', 'Patient_data.bin', 'Mask_Info.bin'],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             with open('Patient_info.bin') as f:
                 info = f.read().split(',')
@@ -49,7 +65,7 @@ class DataManager(QObject):
             with open('Patient_info.bin') as f:
                 info = f.read().strip(';').split(';')
             num_masks = int(info[0])
-            subprocess.run([RAR_PROG, 'x', '-idq', filepath, *[f'{i}.bin' for i in range(num_masks)]],
+            subprocess.run([_RAR_EXE, 'x', '-idq', filepath, *[f'{i}.bin' for i in range(num_masks)]],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             for i in range(num_masks):
                 msk = SkullEngineMultiRoiMask.read_bin_aa(f'{i}.bin', frame=frame)
@@ -58,7 +74,6 @@ class DataManager(QObject):
             os.chdir(cwd)
 
         return man
-
 
 
     def set_scan(self, _img:SkullEngineScan, *, action_if_exists='reset') -> None:
@@ -73,10 +88,13 @@ class DataManager(QObject):
             elif action_if_exists == 'error':
                 raise ValueError('image is already loaded and cannot be changed')
         else:
-            self.scan = _img
-            self.mask = SkullEngineMultiRoiMask.empty(frame=self.scan.frame)
 
-        self.dataReloaded(_img)
+            _mask = SkullEngineMultiRoiMask.empty(ref_scan=_img)
+            self.data_stack.append(_img)
+            self.data_stack.append(_mask)
+
+        self.scanLoaded.emit()
+
         return None
 
 
@@ -92,12 +110,15 @@ class DataManager(QObject):
 
 
     def add_mask(self, *, mask_id:int=None, arr:np.ndarray=None) -> None:
+
+        _mask = self.get_mask()
+
         if not self.scan_is_loaded():
             raise ValueError('load scan first')
         
         if mask_id in self.get_mask_ids():
             print(f'mask {mask_id} already exists and will be erased')
-            self.mask.set_false(mask_id=mask_id)
+            _mask.set_false(mask_id=mask_id)
 
         if arr is None:
 
@@ -113,7 +134,7 @@ class DataManager(QObject):
                 new_id = mask_id or self.get_next_available_mask_id()
                 if new_id not in self.get_mask_ids():
                     self.get_mask_ids().append(new_id)
-                self.mask.set_true(mask_id=new_id, voxel_index=arr)
+                _mask.set_true(mask_id=new_id, voxel_index=arr)
 
             else:
                 for v in np.unique(arr):
@@ -121,20 +142,21 @@ class DataManager(QObject):
                         new_id = mask_id or self.get_next_available_mask_id()
                         if new_id not in self.get_mask_ids():
                             self.get_mask_ids().append(new_id)
-                        self.mask.set_true(mask_id=new_id, voxel_index=arr==v)
+                        _mask.set_true(mask_id=new_id, voxel_index=arr==v)
 
-        self.dataUpdated.emit(self.get_mask())
-        
+        self.dataReloaded.emit(self.get_mask())
+
         return None
         
     
 
     def scan_is_loaded(self) -> bool:
 
-        if hasattr(self, 'scan') and self.scan:
-            return True
-        else:
-            return False 
+        for d in self.data_stack:
+            if isinstance(d, SkullEngineScan):
+                return True
+            
+        return False
 
 
     def get_mask_ids(self) -> list:
@@ -145,18 +167,23 @@ class DataManager(QObject):
 
     def get_scan(self) -> SkullEngineScan:
 
-        if self.scan_is_loaded():
-            return self.scan
-        else:
-            return None
+        for d in self.data_stack:
+            if isinstance(d, SkullEngineScan):
+                return d
+            
+        return None
 
 
     def get_mask(self) -> SkullEngineMultiRoiMask:
 
         if self.scan_is_loaded():
-            return self.mask
-        else:
-            return None
+            for d in self.data_stack:
+                if isinstance(d, SkullEngineMultiRoiMask):
+                    return d
+            raise ValueError('mask should exist')
+        
+        return None
+
 
 
 
@@ -172,23 +199,42 @@ class DataManager(QObject):
 
 
     def resample(self, *, new_spacing):
-        img = self.get_scan()
-        if img:
-            img.resample(new_spacing=new_spacing)
-            self.get_mask().resample(new_spacing=new_spacing)
 
+        _img = self.get_scan()
+        _mask = self.get_mask()
+        
+        if not _img:
+            raise ValueError('scan is not loaded')
 
+        # resample image
+        img_arr = resample(_img.numpy_array(), old_spacing=_img.frame.spacing, new_spacing=new_spacing, mode='nearest')
+        _img.actions.append(SkullEngineAction(('self', 'resample', [], {})))
+        _img1 = SkullEngineScan(
+            data=numpy_to_vtk(img_arr.flat, deep=0),
+            frame=ImageFrame(
+                origin=_img.frame.origin,
+                size=img_arr.shape[::-1],
+                spacing=new_spacing,
+            ),
+            identifier=_img.identifier,
+            actions=_img.actions,
+        )
 
-    # def get_blended_image(self):
+        # resample mask
+        mask_arr = resample(_mask.numpy_array(), old_spacing=_img.frame.spacing, new_spacing=new_spacing, mode='grid-constant', order=0, cval=0)
+        _mask.actions.append(SkullEngineAction(('self', 'resample', [], {})))
 
-    #     if self.scan_is_loaded():
-    #         img = self.get_scan()
-    #         if self.get_number_of_masks():
-    #             pass
-                
+        _mask1 = SkullEngineMultiRoiMask(
+            data=numpy_to_vtk(mask_arr.flat, deep=0),
+            reference_scan=_img1,
+            identifier=_mask.identifier,
+            actions=_mask.actions,
+        )
 
-
-    # def get_blended_image_port(self):
-    #     pass
+        # replace old data with new data
+        self.data_stack.remove(_img)
+        self.data_stack.remove(_mask)
+        self.data_stack.append(_img1)
+        self.data_stack.append(_mask1)
 
 

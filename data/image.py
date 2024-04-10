@@ -12,7 +12,9 @@ from vtkmodules.vtkCommonDataModel import vtkImageData
 from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 from vtkmodules.vtkCommonCore import vtkDataArray
 
-from .base import SkullEngineAsset
+from .base import *
+from .util import *
+
 
 ALLOW_PHI = True
 CAN_ERASE_PHI_AT_INIT = True
@@ -20,117 +22,8 @@ MASK_PIXEL_TYPE = sitk.sitkUInt32
 MASK_DTYPE = np.uint32
 
 
-def read_dicom(filepath, *, rescale=False, **kw):
-    # get series id from the file
-    file_reader = sitk.ImageFileReader()
-    file_reader.SetFileName(filepath)
-    file_reader.SetImageIO("GDCMImageIO")
-    file_reader.LoadPrivateTagsOn()
-    file_reader.ReadImageInformation()
-    series_instance_uid = ''
-    if file_reader.HasMetaDataKey('0020|000e'):
-        series_instance_uid = file_reader.GetMetaData('0020|000e')
-
-    # find all the files in the same series and same directory
-    dicom_names = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(os.path.dirname(filepath), series_instance_uid)
-
-    # read the series
-    reader = sitk.ImageSeriesReader()
-    reader.SetImageIO("GDCMImageIO")
-    reader.SetFileNames(dicom_names)
-    reader.SetOutputPixelType()
-    reader.LoadPrivateTagsOn()
-    img = reader.Execute()
-
-    if rescale:
-        if img.HasMetaDataKey('0028|1052') and img.HasMetaDataKey('0028|1053'):
-            b,m = float(img.GetMetaData('0028|1052')), float(img.GetMetaData('0028|1053')) # Rescale Intercept, Rescale Slope
-        else:
-            b,m = -1024., 1. # this is a compramise for current situation
-        
-        img = (img-m) / m
-
-    return img
-
-
 @dataclass(kw_only=True)
-class ImageFrame:
-    ''' this class encaps the size, spacing, and origin information of medical scans and segmentation masks.
-    dimensions are ordered as +x, +y, +z
-    on usage of this class:
-        numpy arrays are ordered (+z, +y, +x) in this script, same as returned from sitk.GetArrayFromImage
-        for legacy reasons, arrays decoded from AnatomicAligner bin file are ordered (-z, -y, +x), so a reversal is needed immediately on axial and coronal axes.
-    '''
-
-    size: tuple[int, int, int]
-    spacing:tuple[float, float, float]
-    origin:tuple[float, float, float]
-
-
-    @classmethod
-    def from_image(cls, img:sitk.Image):
-        if isinstance(img, sitk.Image):
-            return cls(
-                        size=img.GetSize(),
-                        spacing=img.GetSpacing(),
-                        origin=img.GetOrigin(),
-                        )
-        elif isinstance(img, vtkImageData):
-            return cls(
-                        size=img.GetDimensions(),
-                        spacing=img.GetSpacing(),
-                        origin=img.GetOrigin(),
-                        )
-
-
-    def copy(self):
-        return self.__class__(
-                    size=self.size,
-                    spacing=self.spacing,
-                    origin=self.origin,
-                    )
-
-
-
-@dataclass(kw_only=True)
-class ImageIdentifier:
-    id:str = '' # for other part of program to find this image
-    metadata:dict = field(default_factory=dict) # tags carried over from image file
-    has_phi:bool = False
-
-    def __post_init__(self):
-        # Loop through the fields
-        for field in fields(self):
-            # If there is a default and the value of the field is none we can assign a value
-            if not isinstance(field.default, dataclasses._MISSING_TYPE) and getattr(self, field.name) is None:
-                setattr(self, field.name, field.default)
-
-
-    def erase_phi(self, **kw):
-        # for now, delete all metadata
-        self.metadata.clear()
-        self.has_phi = False
-
-
-    def confirm_phi(self, *, has_phi):
-        self.has_phi = has_phi
-
-        if has_phi:
-            if ALLOW_PHI:
-                pass
-
-            elif CAN_ERASE_PHI_AT_INIT:
-                self.erase_phi()
-
-            else:
-                raise ValueError(
-                    "This program allows only non-PHI data"
-                )
-
-
-
-# @dataclass(kw_only=True)
-class Image(SkullEngineAsset):
+class Image(SkullEngineData):
     '''this is the base class of all image assets used in this program
     it contains at least the following five attributes:
         data: an vtk data array of the pixel value, of size Nx1
@@ -140,15 +33,12 @@ class Image(SkullEngineAsset):
         extra: extra key-value pairs for ad hoc use
     '''
 
-    def __init__(self, *, data:vtkDataArray=None, frame:ImageFrame, identifier:ImageIdentifier, actions=[], extra={}) -> None:
+    data: vtkDataArray
+    frame: ImageFrame # override Frame to provide size and spacing
 
-        self.frame = ImageFrame(size=frame.size, spacing=frame.spacing, origin=frame.origin)
-        self.identifier = identifier
-        self.actions = actions
-        self.extra = extra
-        self.data = data
-        
-
+    # @property
+    # def data(self):
+    #     return self.Get
 
     def numpy_array(self) -> np.ndarray: # points to the same data in memory
         '''this method creates a numpy ndarray that points to the same data array, and it is very fast'''
@@ -164,12 +54,11 @@ class Image(SkullEngineAsset):
         arr = np.empty(frame.size[::-1], dtype=dtype)
         obj = cls(
             data=numpy_to_vtk(arr.flat, deep=0),
-            frame=frame.copy(),
-            identifier=ImageIdentifier()
+            frame=frame,
+            identifier=Identifier()
         )
-        obj.actions.append(['empty', [], dict(frame=frame, dtype=dtype, **kw)])
+        obj.actions.append(SkullEngineAction((cls.__name__, 'empty', [], dict(frame=frame, dtype=dtype, **kw))))
         return obj
-
 
 
     @classmethod
@@ -195,9 +84,9 @@ class Image(SkullEngineAsset):
                               )
         
         obj = cls.from_itk(img)
-        obj.actions.append((
-            'read', [filepath], kw,
-        ))
+        obj.actions.append(
+            SkullEngineAction((cls.__name__, 'read', [filepath], kw))
+        )
 
         return obj
     
@@ -221,7 +110,7 @@ class Image(SkullEngineAsset):
                         origin=img.GetOrigin(),
                         )
 
-        identifier = ImageIdentifier()
+        identifier = Identifier()
 
         return cls(data=arr, frame=frame, identifier=identifier)
 
@@ -244,7 +133,7 @@ class Image(SkullEngineAsset):
         for key in img.GetMetaDataKeys():
             metadata[key] = img.GetMetaData(key)
 
-        identifier = ImageIdentifier(metadata=metadata)
+        identifier = Identifier(metadata=metadata)
 
         return cls(data=arr, frame=frame, identifier=identifier)
 
@@ -276,21 +165,23 @@ class Image(SkullEngineAsset):
         return img
 
 
+
+@dataclass(kw_only=True)
 class SkullEngineScan(Image):
     '''this class reads and writes medical scans in common formats'''
 
     @classmethod
-    def read_bin_aa(cls, filepath, frame:ImageFrame):
+    def read_bin_aa(cls, filepath, *, frame:ImageFrame):
         '''reads medical scans saved in AnatomicAligner bin file'''
         arr = np.fromfile(filepath, dtype=np.int16)
         arr = arr.reshape(frame.size[::-1])[::-1,::-1,:]
         t = perf_counter()
         arr = numpy_to_vtk(arr.flat, deep=0)
         print(f'to vtk: {perf_counter()-t} seconds')
-        img = cls(data=arr, frame=frame, identifier=ImageIdentifier())
-        img.actions.append((
-            'read_bin_aa', filepath, frame
-        ))
+        img = cls(data=arr, frame=frame, identifier=Identifier())
+        img.actions.append(
+            SkullEngineAction((cls.__name__, 'read_bin_aa', filepath, dict(frame=frame)))
+        )
         return img
     
     def write_bin_aa(self, filepath):
@@ -308,26 +199,44 @@ class SkullEngineScan(Image):
         return img
         
 
-    def resample(self, *, new_spacing):
-        z = np.array(self.frame.spacing)/np.array(new_spacing)
-        arr = self.numpy_array()
-        arr = zoom(arr, zoom=z[::-1], mode='nearest', grid_mode=True).astype(arr.dtype)
-        new_size = arr.shape[::-1]
-
-        self.data = numpy_to_vtk(arr.flat, deep=0)
-        self.frame.size = new_size
-        self.frame.spacing = new_spacing
-        self.actions.append(['resample', [], dict(new_spacing=new_spacing)])
+    # def resample(self, *, new_spacing):
+    #     return super().resample(new_spacing=new_spacing, mode='nearest')
 
 
 
+
+@dataclass(kw_only=True)
 class SkullEngineMask(Image):
     '''this class encaps IO methods of segmentation masks of medical scans
     it is agnostic to what is stored in its data'''
 
+    reference_scan: SkullEngineScan = None
+    frame:ImageFrame = None
+
+    @property
+    def frame(self):
+        return self.reference_scan.frame
+    
+
+    # following setter is a compromise
+    # for overriding data field with a property
+    # luckily, frame is a frozen dataset
+    @frame.setter
+    def frame(self, f):
+
+        pass
+
 
     @classmethod
-    def read_bin_aa(cls, filepath, frame:ImageFrame):
+    def empty(cls, *, ref_scan:SkullEngineScan, **kw):
+        '''this is a convenience method that creates an empty mask to possibly represent multiple overlapping roi's, '''
+        img = super().empty(frame=ref_scan.frame, dtype=MASK_DTYPE)
+        img.reference_scan = ref_scan
+        return img
+
+
+    @classmethod
+    def read_bin_aa(cls, filepath, *, frame:ImageFrame):
         # origin and spacing are optional for initializer but should be set later
         bytes = np.fromfile(filepath, dtype=np.int16)
         arr = np.zeros(frame.size[::-1], dtype=bool)
@@ -339,7 +248,7 @@ class SkullEngineMask(Image):
                 ] = True
         arr = arr[::-1,::-1,:].astype(np.int8) # this is a single roi mask, so we use a more efficient data type
         arr = numpy_to_vtk(arr.flat, deep=0)
-        return cls(data=arr, frame=frame, identifier=ImageIdentifier())
+        return cls(data=arr, frame=frame, identifier=Identifier())
 
 
     def write_bin_aa(self, filepath, split_if_multiple_found=True):
@@ -371,20 +280,11 @@ class SkullEngineMask(Image):
     
     @classmethod
     def read(cls, filepath, **kw):
-        img = super().read(filepath, rescale=False, outputPixelType=MASK_PIXEL_TYPE, **kw) # rescale is for dicom
-        return img
+        return super().read(filepath, rescale=False, **kw) # rescale is for dicom
 
 
-    def resample(self, *, new_spacing):
-        z = np.array(self.frame.spacing)/np.array(new_spacing)
-        arr = self.numpy_array()
-        arr = zoom(arr, zoom=z[::-1], mode='grid-constant', order=0, cval=0, grid_mode=True).astype(arr.dtype) # mode is for extrapolation
-        new_size = arr.shape[::-1]
-
-        self.data = numpy_to_vtk(arr.flat, deep=0)
-        self.frame.size = new_size
-        self.frame.spacing = new_spacing
-        self.actions.append(['resample', [], dict(new_spacing=new_spacing)])
+    # def resample(self, *, new_spacing):
+    #     return super().resample(new_spacing=new_spacing, mode='grid-constant', order=0, cval=0)
 
 
         # img = self.itk()
@@ -399,14 +299,14 @@ class SkullEngineMask(Image):
         #     True)
 
 
+@dataclass(kw_only=True)
 class SkullEngineMultiRoiMask(SkullEngineMask):
 
     @classmethod
-    def empty(cls, *, frame:ImageFrame, **kw):
-        '''this is a convenience method that creates an empty mask to possibly represent multiple overlapping roi's, '''
-        return super().empty(frame=frame, dtype=MASK_DTYPE)
+    def read(cls, filepath, **kw):
+        return super().read(filepath, outputPixelType=MASK_PIXEL_TYPE, **kw) # rescale is for dicom
 
-    
+
     def set_true(self, *, mask_id, voxel_index=None):
 
         data = self.numpy_array()
@@ -415,7 +315,6 @@ class SkullEngineMultiRoiMask(SkullEngineMask):
             data[...] |= bin_or
         else:
             data[voxel_index] |= bin_or
-
 
 
     def set_false(self, *, mask_id, voxel_index=None):

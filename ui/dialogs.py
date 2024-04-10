@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, Signal, Slot, QEvent, QObject
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import QDialog, QLineEdit, QAbstractButton
 
-from ..data import DataView, DataManager
+from ..data import *
 from .origin_ui import Ui_Dialog as ui_origin
 from .resample_ui import Ui_Dialog as ui_resample
 
@@ -109,9 +109,15 @@ class SetOriginDialog(QDialog, DataView):
             
         elif b.text() == 'OK':
             scan = self.get_data_manager().get_scan()
-            scan.frame.origin = tuple(self.new_origin)
+            scan.frame = ImageFrame(
+                origin=tuple(self.new_origin),
+                spacing=scan.frame.spacing,
+                size = scan.frame.size)
             self.get_data_manager().dataReloaded.emit(scan)
             print(f'New origin is set {scan.frame.origin}')
+
+        else:
+            raise ValueError('program error, should not be here')
 
 
 class ResampleDialog(QDialog, DataView):
@@ -184,5 +190,8 @@ class ResampleDialog(QDialog, DataView):
                 scan = dm.get_scan()
                 self.get_data_manager().dataReloaded.emit(scan)
                 print(f'New spacing is set {scan.frame.spacing}')
+
+        else:
+            raise ValueError('program error, should not be here')
 
 
